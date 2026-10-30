@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -36,13 +37,17 @@ class AppConfig {
 
   static String normalizeSiteUrl(String value) {
     final String trimmed = value.trim();
-    if (trimmed.isEmpty) {
-      return 'https://example.com';
+    String url = trimmed.isEmpty ? 'https://example.com' : trimmed;
+    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+      url = 'https://$url';
     }
-    if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-      return trimmed;
+    // On the Android emulator the host machine is reachable through the
+    // 10.0.2.2 alias, so a developer site configured as http://localhost/
+    // is rewritten automatically while real domains stay untouched.
+    if (Platform.isAndroid && url.contains('://localhost')) {
+      url = url.replaceFirst('://localhost', '://10.0.2.2');
     }
-    return 'https://$trimmed';
+    return url;
   }
 
   static Color parseHexColor(String value, {required Color fallback}) {
@@ -98,8 +103,51 @@ class WebViewHomeScreen extends StatefulWidget {
 
 class _WebViewHomeScreenState extends State<WebViewHomeScreen> {
   late final WebViewController _controller;
+  double _progress = 0;
   bool _isLoading = true;
   bool _hasError = false;
+  bool _hasLoadedOnce = false;
+
+  /// Universal mobile hardening injected into every page: strict viewport,
+  /// horizontal-overflow lock, hidden WP admin bar, and on-the-fly repair of
+  /// legacy http://localhost/ asset or link URLs for emulator testing.
+  static const String _mobileFixesJs = r'''
+(function() {
+  try {
+    var head = document.head || document.documentElement;
+    if (!head) { return; }
+    var meta = document.querySelector('meta[name="viewport"]');
+    if (!meta) {
+      meta = document.createElement('meta');
+      meta.name = 'viewport';
+      head.appendChild(meta);
+    }
+    meta.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no');
+    if (!document.getElementById('wptf-universal-mobile-fix')) {
+      var style = document.createElement('style');
+      style.id = 'wptf-universal-mobile-fix';
+      style.textContent =
+        'html, body { overflow-x: hidden !important; max-width: 100vw !important; width: 100% !important; -webkit-overflow-scrolling: touch !important; } ' +
+        '#wpadminbar { display: none !important; }';
+      head.appendChild(style);
+    }
+    document.documentElement.style.overflowX = 'hidden';
+    if (document.body) { document.body.style.overflowX = 'hidden'; }
+    var fix = function (value) { return String(value).replace('://localhost/', '://10.0.2.2/'); };
+    var images = document.querySelectorAll('img[src], img[data-src], img[srcset]');
+    for (var i = 0; i < images.length; i++) {
+      var img = images[i];
+      if (img.src && img.src.indexOf('://localhost/') !== -1) { img.src = fix(img.src); }
+      if (img.dataset && img.dataset.src && img.dataset.src.indexOf('://localhost/') !== -1) { img.dataset.src = fix(img.dataset.src); }
+      if (img.srcset && img.srcset.indexOf('://localhost/') !== -1) { img.srcset = fix(img.srcset); }
+    }
+    var links = document.querySelectorAll('a[href^="http://localhost/"]');
+    for (var j = 0; j < links.length; j++) {
+      links[j].href = fix(links[j].href);
+    }
+  } catch (e) {}
+})();
+''';
 
   @override
   void initState() {
@@ -109,30 +157,49 @@ class _WebViewHomeScreenState extends State<WebViewHomeScreen> {
       ..setBackgroundColor(Colors.white)
       ..setNavigationDelegate(
         NavigationDelegate(
-          onPageStarted: (_) {
+          onNavigationRequest: (NavigationRequest request) {
+            // Hand protocols the OS owns over to the system gracefully
+            // instead of letting the WebView throw on them.
+            const List<String> externalSchemes = <String>[
+              'tel', 'mailto', 'sms', 'whatsapp', 'intent', 'geo', 'market',
+            ];
+            final Uri? uri = Uri.tryParse(request.url);
+            final String scheme = (uri?.scheme ?? '').toLowerCase();
+            if (externalSchemes.contains(scheme)) {
+              return NavigationDecision.prevent;
+            }
+            return NavigationDecision.navigate;
+          },
+          onPageStarted: (String url) {
             if (mounted) {
               setState(() {
-                _isLoading = true;
+                _isLoading = !_hasLoadedOnce;
                 _hasError = false;
               });
             }
+            _injectMobileFixes();
           },
-          onPageFinished: (_) {
+          onPageFinished: (String url) {
+            _injectMobileFixes();
             if (mounted) {
-              setState(() => _isLoading = false);
-            }
-          },
-          onHttpError: (HttpResponseError error) {
-            final int? statusCode = error.response?.statusCode;
-            if (mounted && statusCode != null && statusCode >= 400) {
               setState(() {
-                _hasError = true;
+                _hasLoadedOnce = true;
                 _isLoading = false;
               });
             }
           },
+          onProgress: (int progress) {
+            if (mounted) {
+              setState(() => _progress = progress / 100.0);
+            }
+          },
           onWebResourceError: (WebResourceError error) {
-            if (mounted && error.isForMainFrame == true) {
+            // Fault tolerance: a broken image, font, stylesheet or tracking
+            // pixel must NEVER collapse the app. The offline screen appears
+            // only when the very first main-frame load fails outright.
+            if (mounted &&
+                error.isForMainFrame == true &&
+                !_hasLoadedOnce) {
               setState(() {
                 _hasError = true;
                 _isLoading = false;
@@ -142,60 +209,103 @@ class _WebViewHomeScreenState extends State<WebViewHomeScreen> {
         ),
       );
 
-    // Any website must render completely: allow http sites (cleartext is
-    // enabled in the manifest) and never block mixed-content assets so
-    // images on https pages served over http still load.
     if (_controller.platform is AndroidWebViewController) {
-      (_controller.platform as AndroidWebViewController)
-          .setMixedContentMode(MixedContentMode.alwaysAllow);
+      final AndroidWebViewController androidController =
+          _controller.platform as AndroidWebViewController;
+      androidController
+        ..setMixedContentMode(MixedContentMode.alwaysAllow)
+        ..setUseWideViewPort(true)
+        ..enableZoom();
+      AndroidWebViewCookieManager()
+          .setAcceptThirdPartyCookies(androidController, true);
     }
 
     _controller.loadRequest(Uri.parse(widget.config.siteUrl));
   }
 
+  Future<void> _injectMobileFixes() async {
+    try {
+      await _controller.runJavaScript(_mobileFixesJs);
+    } catch (_) {
+      // DOM not ready yet — the onPageFinished pass re-runs the script.
+    }
+  }
+
   void _retry() {
     setState(() {
       _hasError = false;
-      _isLoading = true;
+      _isLoading = !_hasLoadedOnce;
     });
     _controller.reload();
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Stack(
-        children: [
-          WebViewWidget(controller: _controller),
-          if (_isLoading && !_hasError)
-            Positioned.fill(
-              child: ColoredBox(
-                color: Colors.white,
-                child: Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      SpinKitCircle(
-                        color: widget.config.primaryColor,
-                        size: 64.0,
-                      ),
-                      const SizedBox(height: 18),
-                      Text(
-                        widget.config.appName,
-                        style: TextStyle(
-                          color: widget.config.primaryColor,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, Object? result) async {
+        if (didPop) {
+          return;
+        }
+        if (await _controller.canGoBack()) {
+          await _controller.goBack();
+        } else {
+          await SystemNavigator.pop();
+        }
+      },
+      child: Scaffold(
+        body: Column(
+          children: [
+            if (_progress > 0 && _progress < 1)
+              LinearProgressIndicator(
+                value: _progress,
+                minHeight: 3,
+                backgroundColor: Colors.grey.shade200,
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  widget.config.primaryColor,
                 ),
               ),
+            Expanded(
+              child: Stack(
+                children: [
+                  RefreshIndicator(
+                    color: widget.config.primaryColor,
+                    onRefresh: () => _controller.reload(),
+                    child: WebViewWidget(controller: _controller),
+                  ),
+                  if (_isLoading && !_hasError)
+                    Positioned.fill(
+                      child: ColoredBox(
+                        color: Colors.white,
+                        child: Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              SpinKitCircle(
+                                color: widget.config.primaryColor,
+                                size: 64.0,
+                              ),
+                              const SizedBox(height: 18),
+                              Text(
+                                widget.config.appName,
+                                style: TextStyle(
+                                  color: widget.config.primaryColor,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  if (_hasError)
+                    OfflineErrorScreen(config: widget.config, onRetry: _retry),
+                ],
+              ),
             ),
-          if (_hasError)
-            OfflineErrorScreen(config: widget.config, onRetry: _retry),
-        ],
+          ],
+        ),
       ),
     );
   }
