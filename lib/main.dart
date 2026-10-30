@@ -103,6 +103,7 @@ class WebViewHomeScreen extends StatefulWidget {
 
 class _WebViewHomeScreenState extends State<WebViewHomeScreen> {
   late final WebViewController _controller;
+  late final bool _isLocalSite;
   double _progress = 0;
   bool _isLoading = true;
   bool _hasError = false;
@@ -127,7 +128,7 @@ class _WebViewHomeScreenState extends State<WebViewHomeScreen> {
       var style = document.createElement('style');
       style.id = 'wptf-universal-mobile-fix';
       style.textContent =
-        'html, body { overflow-x: hidden !important; max-width: 100vw !important; width: 100% !important; -webkit-overflow-scrolling: touch !important; } ' +
+        'html, body { overflow-x: hidden !important; max-width: 100vw !important; width: 100% !important; -webkit-overflow-scrolling: touch !important; scroll-behavior: smooth !important; } ' +
         '#wpadminbar { display: none !important; }';
       head.appendChild(style);
     }
@@ -152,6 +153,11 @@ class _WebViewHomeScreenState extends State<WebViewHomeScreen> {
   @override
   void initState() {
     super.initState();
+    final Uri siteUri = Uri.tryParse(widget.config.siteUrl) ?? Uri();
+    final String siteHost = siteUri.host.toLowerCase();
+    _isLocalSite = siteHost == 'localhost' ||
+        siteHost == '127.0.0.1' ||
+        siteHost == '10.0.2.2';
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(Colors.white)
@@ -167,6 +173,26 @@ class _WebViewHomeScreenState extends State<WebViewHomeScreen> {
             final String scheme = (uri?.scheme ?? '').toLowerCase();
             if (externalSchemes.contains(scheme)) {
               return NavigationDecision.prevent;
+            }
+
+            // Smart Host Bridge: while testing a local WordPress site the
+            // page keeps advertising http://localhost/ for its internal
+            // links and redirects. Inside the emulator that host means the
+            // phone itself, so rewrite it on the fly to the host-machine
+            // alias (10.0.2.2). Real public domains are never touched, so
+            // production sites route exactly as published.
+            if (_isLocalSite &&
+                Platform.isAndroid &&
+                (scheme == 'http' || scheme == 'https') &&
+                uri != null) {
+              final String host = uri.host.toLowerCase();
+              if (host == 'localhost' || host == '127.0.0.1') {
+                final Uri mapped = uri.replace(host: '10.0.2.2');
+                if (mapped.toString() != request.url) {
+                  _controller.loadRequest(mapped);
+                  return NavigationDecision.prevent;
+                }
+              }
             }
             return NavigationDecision.navigate;
           },
@@ -215,7 +241,8 @@ class _WebViewHomeScreenState extends State<WebViewHomeScreen> {
       androidController
         ..setMixedContentMode(MixedContentMode.alwaysAllow)
         ..setUseWideViewPort(true)
-        ..enableZoom(true);
+        ..enableZoom(true)
+        ..setOverScrollMode(WebViewOverScrollMode.ifContentScrolls);
     }
 
     _controller.loadRequest(Uri.parse(widget.config.siteUrl));
