@@ -42,10 +42,14 @@ class AppConfig {
       url = 'https://$url';
     }
     // On the Android emulator the host machine is reachable through the
-    // 10.0.2.2 alias, so a developer site configured as http://localhost/
-    // is rewritten automatically while real domains stay untouched.
-    if (Platform.isAndroid && url.contains('://localhost')) {
-      url = url.replaceFirst('://localhost', '://10.0.2.2');
+    // 10.0.2.2 alias, so developer sites configured as http://localhost/
+    // or http://127.0.0.1/ are rewritten automatically while real domains
+    // stay untouched.
+    if (Platform.isAndroid &&
+        (url.contains('://localhost') || url.contains('://127.0.0.1'))) {
+      url = url
+          .replaceFirst('://localhost', '://10.0.2.2')
+          .replaceFirst('://127.0.0.1', '://10.0.2.2');
     }
     return url;
   }
