@@ -18,3 +18,4 @@ generates fresh, always-up-to-date Gradle scaffolding on the runner with
 
 | نام وب‌سایت / اپلیکیشن | تاریخ ساخت | نسخه نصبی تستی (APK) | نسخه انتشار مارکت‌ها (AAB) |
 | :--- | :--- | :--- | :--- |
+| گجتال | 2026-10-30 16:32 UTC | [Download APK](https://github.com/mrpunisher1234-tech/wp-flutter-builder/releases/download/build-2/app-release.apk) | — |
