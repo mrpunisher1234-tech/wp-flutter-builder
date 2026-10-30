@@ -215,9 +215,7 @@ class _WebViewHomeScreenState extends State<WebViewHomeScreen> {
       androidController
         ..setMixedContentMode(MixedContentMode.alwaysAllow)
         ..setUseWideViewPort(true)
-        ..enableZoom();
-      AndroidWebViewCookieManager()
-          .setAcceptThirdPartyCookies(androidController, true);
+        ..enableZoom(true);
     }
 
     _controller.loadRequest(Uri.parse(widget.config.siteUrl));
