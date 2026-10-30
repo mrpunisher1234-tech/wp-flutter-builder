@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'package:webview_flutter/webview_flutter.dart';
+import 'package:webview_flutter_android/webview_flutter_android.dart';
 
 /// Application identity injected by the WP to Flutter cloud build engine.
 class AppConfig {
@@ -139,8 +140,17 @@ class _WebViewHomeScreenState extends State<WebViewHomeScreen> {
             }
           },
         ),
-      )
-      ..loadRequest(Uri.parse(widget.config.siteUrl));
+      );
+
+    // Any website must render completely: allow http sites (cleartext is
+    // enabled in the manifest) and never block mixed-content assets so
+    // images on https pages served over http still load.
+    if (_controller.platform is AndroidWebViewController) {
+      (_controller.platform as AndroidWebViewController)
+          .setMixedContentMode(MixedContentMode.alwaysAllow);
+    }
+
+    _controller.loadRequest(Uri.parse(widget.config.siteUrl));
   }
 
   void _retry() {
