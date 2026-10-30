@@ -1,0 +1,173 @@
+name: WP to Flutter Cloud Build Engine
+
+on:
+  repository_dispatch:
+    types: [build_app]
+  workflow_dispatch:
+    inputs:
+      license_key:
+        description: 'Build license key (required security guard)'
+        required: true
+        default: 'wptf_secure_build_2026'
+      app_name:
+        description: 'Application display name'
+        required: false
+        default: 'Demo App'
+      site_url:
+        description: 'Website URL the app wraps'
+        required: false
+        default: 'https://example.com'
+      primary_color:
+        description: 'Primary brand color (HEX)'
+        required: false
+        default: '#2271b1'
+      build_format:
+        description: 'Build format: apk | aab | both'
+        required: false
+        default: 'both'
+
+permissions:
+  contents: write
+
+# One build at a time keeps release publishing and README commits race-free.
+concurrency:
+  group: wp-to-flutter-build-factory
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Compile & Publish
+    runs-on: ubuntu-latest
+    env:
+      APP_NAME: ${{ github.event.client_payload.app_name || github.event.inputs.app_name || 'Demo App' }}
+      SITE_URL: ${{ github.event.client_payload.site_url || github.event.inputs.site_url || 'https://example.com' }}
+      PRIMARY_COLOR: ${{ github.event.client_payload.primary_color || github.event.inputs.primary_color || '#2271b1' }}
+      BUILD_FORMAT: ${{ github.event.client_payload.build_format || github.event.inputs.build_format || 'both' }}
+    steps:
+      - name: 'Security Guard: Verify Build License'
+        env:
+          LICENSE_KEY: ${{ github.event.client_payload.license_key || github.event.inputs.license_key }}
+        run: |
+          echo "Verifying build license..."
+          if [ -z "$LICENSE_KEY" ]; then
+            echo "::error::SECURITY ERROR: No license key was provided (client_payload.license_key). Build request rejected."
+            exit 1
+          fi
+          if [ "$LICENSE_KEY" != 'wptf_secure_build_2026' ]; then
+            echo "::error::SECURITY ERROR: Invalid build license key. This build factory rejects unauthorized requests."
+            exit 1
+          fi
+          echo "License verified OK."
+
+      - name: 'Normalize Build Format'
+        run: |
+          FORMAT="$(printf '%s' "$BUILD_FORMAT" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+          case "$FORMAT" in
+            apk|aab|both) ;;
+            *) echo "::error::Invalid build_format '${FORMAT}' (allowed: apk, aab, both)."; exit 1 ;;
+          esac
+          echo "BUILD_FORMAT=$FORMAT" >> "$GITHUB_ENV"
+
+      - name: 'Sanitize Brand Name'
+        env:
+          RAW_APP_NAME: ${{ env.APP_NAME }}
+        run: |
+          SAFE_NAME="$(printf '%s' "$RAW_APP_NAME" | tr -d '"'"'"'<>&|\\/$`@%' | tr -d '\n' | cut -c1-60)"
+          if [ -z "$SAFE_NAME" ]; then
+            SAFE_NAME="Demo App"
+          fi
+          echo "APP_NAME=$SAFE_NAME" >> "$GITHUB_ENV"
+
+      - name: 'Checkout Source'
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 'Setup Java 17 (Temurin)'
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: 'Setup Flutter (stable channel)'
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: 'Inject Dynamic Payload into assets/config.json'
+        run: |
+          jq -n \
+            --arg app_name "$APP_NAME" \
+            --arg site_url "$SITE_URL" \
+            --arg primary_color "$PRIMARY_COLOR" \
+            '{app_name: $app_name, site_url: $site_url, primary_color: $primary_color}' \
+            > assets/config.json
+          echo "--- assets/config.json ---"
+          cat assets/config.json
+
+      - name: 'Generate Android Scaffolding (flutter create)'
+        run: flutter create --platforms=android --org com.wptoflutter .
+
+      - name: 'Patch Android Manifest (INTERNET permission + brand label)'
+        run: |
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+          if ! grep -q 'android.permission.INTERNET' "$MANIFEST"; then
+            perl -0pi -e 's/<application/<uses-permission android:name="android.permission.INTERNET"\/>\n    <application/' "$MANIFEST"
+          fi
+          perl -0pi -e "s/android:label=\"[^\"]*\"/android:label=\"\Q$ENV{APP_NAME}\E\"/" "$MANIFEST"
+          echo "--- AndroidManifest.xml (head) ---"
+          head -n 20 "$MANIFEST"
+          if ! grep -q 'android.permission.INTERNET' "$MANIFEST"; then
+            echo "::error::INTERNET permission injection failed."
+            exit 1
+          fi
+
+      - name: 'Flutter Pub Get'
+        run: flutter pub get
+
+      - name: 'Build Release APK'
+        if: env.BUILD_FORMAT == 'apk' || env.BUILD_FORMAT == 'both'
+        run: flutter build apk --release
+
+      - name: 'Build Release AAB (App Bundle)'
+        if: env.BUILD_FORMAT == 'aab' || env.BUILD_FORMAT == 'both'
+        run: flutter build appbundle --release
+
+      - name: 'Publish GitHub Release'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: "${{ env.APP_NAME }} Build #${{ github.run_number }}"
+          body: |
+            Automated cloud build **#${{ github.run_number }}**
+            - **App:** ${{ env.APP_NAME }}
+            - **Website:** ${{ env.SITE_URL }}
+            - **Primary color:** ${{ env.PRIMARY_COLOR }}
+            - **Format:** ${{ env.BUILD_FORMAT }}
+            - **Triggered by:** WP to Flutter WordPress plugin
+          files: |
+            build/app/outputs/flutter-apk/app-release.apk
+            build/app/outputs/bundle/release/app-release.aab
+          fail_on_unmatched_files: false
+          make_latest: true
+
+      - name: 'Showcase Updater: append row to README.md'
+        run: |
+          BUILD_DATE="$(date -u '+%Y-%m-%d %H:%M UTC')"
+          BASE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/build-${{ github.run_number }}"
+          APK_CELL="[Download APK](${BASE_URL}/app-release.apk)"
+          AAB_CELL="[Download AAB](${BASE_URL}/app-release.aab)"
+          if [ "$BUILD_FORMAT" = "apk" ]; then AAB_CELL="—"; fi
+          if [ "$BUILD_FORMAT" = "aab" ]; then APK_CELL="—"; fi
+          printf '| %s | %s | %s | %s |\n' "$APP_NAME" "$BUILD_DATE" "$APK_CELL" "$AAB_CELL" >> README.md
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add README.md
+          if git diff --cached --quiet; then
+            echo "No README changes to commit."
+          else
+            git commit -m "chore(showcase): add ${APP_NAME} (build #${{ github.run_number }})"
+            git pull --rebase origin "${GITHUB_REF_NAME}"
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          fi

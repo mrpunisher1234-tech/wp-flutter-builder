@@ -1,0 +1,20 @@
+# WP to Flutter - Cloud Build Engine 🚀
+
+Automated cloud compiler service for the WP to Flutter WordPress plugin.
+
+Every build request is guarded by a license key, compiled on GitHub's Linux
+runners (Flutter stable + Java 17 + Temurin), and published as a GitHub
+Release with both installable formats:
+
+- **APK** (`app-release.apk`) — direct installation for testing on a phone.
+- **AAB** (`app-release.aab`) — Android App Bundle for Google Play, Cafe Bazaar
+  and Myket publishing.
+
+The Android platform folder (`android/`) is **never committed** — the pipeline
+generates fresh, always-up-to-date Gradle scaffolding on the runner with
+`flutter create --platforms=android .` before compiling.
+
+## 📱 Recent Applications Built
+
+| نام وب‌سایت / اپلیکیشن | تاریخ ساخت | نسخه نصبی تستی (APK) | نسخه انتشار مارکت‌ها (AAB) |
+| :--- | :--- | :--- | :--- |
