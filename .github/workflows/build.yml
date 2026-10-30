@@ -168,6 +168,6 @@ jobs:
             echo "No README changes to commit."
           else
             git commit -m "chore(showcase): add ${APP_NAME} (build #${{ github.run_number }})"
-            git pull --rebase origin "${GITHUB_REF_NAME}"
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}"
             git push origin "HEAD:${GITHUB_REF_NAME}"
           fi
