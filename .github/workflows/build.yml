@@ -109,7 +109,7 @@ jobs:
       - name: 'Generate Android Scaffolding (flutter create)'
         run: flutter create --platforms=android --org com.wptoflutter .
 
-      - name: 'Patch Android Manifest (INTERNET + cleartext + brand label)'
+      - name: 'Patch Android Manifest (INTERNET + cleartext + hw accel + brand label)'
         run: |
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           if ! grep -q 'android.permission.INTERNET' "$MANIFEST"; then
@@ -117,6 +117,9 @@ jobs:
           fi
           if ! grep -q 'usesCleartextTraffic' "$MANIFEST"; then
             perl -0pi -e 's/<application/<application\n        android:usesCleartextTraffic="true"/' "$MANIFEST"
+          fi
+          if ! grep -q 'hardwareAccelerated' "$MANIFEST"; then
+            perl -0pi -e 's/<application/<application\n        android:hardwareAccelerated="true"/' "$MANIFEST"
           fi
           perl -0pi -e "s/android:label=\"[^\"]*\"/android:label=\"\Q$ENV{APP_NAME}\E\"/" "$MANIFEST"
           echo "--- AndroidManifest.xml (head) ---"

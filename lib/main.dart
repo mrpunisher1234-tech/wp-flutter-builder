@@ -132,7 +132,7 @@ class _WebViewHomeScreenState extends State<WebViewHomeScreen> {
       var style = document.createElement('style');
       style.id = 'wptf-universal-mobile-fix';
       style.textContent =
-        'html, body { overflow-x: hidden !important; max-width: 100vw !important; width: 100% !important; -webkit-overflow-scrolling: touch !important; scroll-behavior: smooth !important; } ' +
+        'html, body { overflow-x: hidden !important; max-width: 100vw !important; width: 100% !important; -webkit-overflow-scrolling: touch !important; } ' +
         '#wpadminbar { display: none !important; }';
       head.appendChild(style);
     }
