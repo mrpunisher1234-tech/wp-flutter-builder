@@ -25,6 +25,14 @@ on:
         description: 'Build format: apk | aab | both'
         required: false
         default: 'both'
+      render_mode:
+        description: 'Render mode: webview | native'
+        required: false
+        default: 'webview'
+      api_base_url:
+        description: 'REST API base URL for native mode (optional)'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -43,6 +51,8 @@ jobs:
       SITE_URL: ${{ github.event.client_payload.site_url || github.event.inputs.site_url || 'https://example.com' }}
       PRIMARY_COLOR: ${{ github.event.client_payload.primary_color || github.event.inputs.primary_color || '#2271b1' }}
       BUILD_FORMAT: ${{ github.event.client_payload.build_format || github.event.inputs.build_format || 'both' }}
+      RENDER_MODE: ${{ github.event.client_payload.render_mode || github.event.inputs.render_mode || 'webview' }}
+      API_BASE_URL: ${{ github.event.client_payload.api_base_url || github.event.inputs.api_base_url || '' }}
     steps:
       - name: 'Security Guard: Verify Build License'
         env:
@@ -101,7 +111,9 @@ jobs:
             --arg app_name "$APP_NAME" \
             --arg site_url "$SITE_URL" \
             --arg primary_color "$PRIMARY_COLOR" \
-            '{app_name: $app_name, site_url: $site_url, primary_color: $primary_color}' \
+            --arg render_mode "$RENDER_MODE" \
+            --arg api_base_url "$API_BASE_URL" \
+            '{app_name: $app_name, site_url: $site_url, primary_color: $primary_color, render_mode: $render_mode, api_base_url: $api_base_url}' \
             > assets/config.json
           echo "--- assets/config.json ---"
           cat assets/config.json

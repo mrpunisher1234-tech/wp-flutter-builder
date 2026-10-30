@@ -7,17 +7,34 @@ import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 
+import 'native_mode.dart';
+
 /// Application identity injected by the WP to Flutter cloud build engine.
 class AppConfig {
   const AppConfig({
     required this.appName,
     required this.siteUrl,
     required this.primaryColor,
+    this.apiBaseUrl = '',
+    this.renderMode = 'webview',
   });
 
   final String appName;
   final String siteUrl;
   final Color primaryColor;
+  final String apiBaseUrl;
+  final String renderMode;
+
+  bool get isNative => renderMode == 'native';
+
+  /// Resolved REST root consumed by the native render mode.
+  String get effectiveApiBaseUrl {
+    if (apiBaseUrl.isNotEmpty) {
+      return apiBaseUrl.endsWith('/') ? apiBaseUrl : '$apiBaseUrl/';
+    }
+    final String base = siteUrl.endsWith('/') ? siteUrl : '$siteUrl/';
+    return '${base}wp-json/wp-to-flutter/v1/';
+  }
 
   factory AppConfig.fromMap(Map<String, dynamic> map) {
     return AppConfig(
@@ -27,6 +44,9 @@ class AppConfig {
         (map['primary_color'] as String?) ?? '',
         fallback: const Color(0xFF2271B1),
       ),
+      apiBaseUrl: normalizeSiteUrl((map['api_base_url'] as String?) ?? ''),
+      renderMode:
+          (map['render_mode'] as String?) == 'native' ? 'native' : 'webview',
     );
   }
 
@@ -41,15 +61,17 @@ class AppConfig {
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
       url = 'https://$url';
     }
-    // On the Android emulator the host machine is reachable through the
-    // 10.0.2.2 alias, so developer sites configured as http://localhost/
-    // or http://127.0.0.1/ are rewritten automatically while real domains
-    // stay untouched.
+    return mapEmulatorUrl(url);
+  }
+
+  /// Rewrites developer hosts to the Android emulator alias (10.0.2.2) so
+  /// local WordPress sites load from the device; real domains stay intact.
+  static String mapEmulatorUrl(String url) {
     if (Platform.isAndroid &&
         (url.contains('://localhost') || url.contains('://127.0.0.1'))) {
-      url = url
-          .replaceFirst('://localhost', '://10.0.2.2')
-          .replaceFirst('://127.0.0.1', '://10.0.2.2');
+      return url
+          .replaceAll('://localhost', '://10.0.2.2')
+          .replaceAll('://127.0.0.1', '://10.0.2.2');
     }
     return url;
   }
@@ -91,7 +113,9 @@ class WpToFlutterApp extends StatelessWidget {
         primaryColor: config.primaryColor,
         scaffoldBackgroundColor: Colors.white,
       ),
-      home: WebViewHomeScreen(config: config),
+      home: config.isNative
+          ? NativeHomeScreen(config: config)
+          : WebViewHomeScreen(config: config),
     );
   }
 }
