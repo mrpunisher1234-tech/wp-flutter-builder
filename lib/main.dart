@@ -37,6 +37,7 @@ class AppConfig {
   }
 
   factory AppConfig.fromMap(Map<String, dynamic> map) {
+    final String rawApiBase = ((map['api_base_url'] as String?) ?? '').trim();
     return AppConfig(
       appName: _readName(map['app_name']),
       siteUrl: normalizeSiteUrl((map['site_url'] as String?) ?? ''),
@@ -44,7 +45,8 @@ class AppConfig {
         (map['primary_color'] as String?) ?? '',
         fallback: const Color(0xFF2271B1),
       ),
-      apiBaseUrl: normalizeSiteUrl((map['api_base_url'] as String?) ?? ''),
+      apiBaseUrl:
+          rawApiBase.isEmpty ? '' : normalizeSiteUrl(rawApiBase),
       renderMode:
           (map['render_mode'] as String?) == 'native' ? 'native' : 'webview',
     );
