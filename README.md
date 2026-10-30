@@ -23,3 +23,4 @@ generates fresh, always-up-to-date Gradle scaffolding on the runner with
 | گجتال | 2026-10-30 19:00 UTC | [Download APK](https://github.com/mrpunisher1234-tech/wp-flutter-builder/releases/download/build-4/app-release.apk) | — |
 | گجتال | 2026-10-30 19:33 UTC | [Download APK](https://github.com/mrpunisher1234-tech/wp-flutter-builder/releases/download/build-6/app-release.apk) | — |
 | گجتال | 2026-10-30 20:10 UTC | [Download APK](https://github.com/mrpunisher1234-tech/wp-flutter-builder/releases/download/build-9/app-release.apk) | — |
+| گجتال | 2026-10-30 20:48 UTC | [Download APK](https://github.com/mrpunisher1234-tech/wp-flutter-builder/releases/download/build-11/app-release.apk) | — |
