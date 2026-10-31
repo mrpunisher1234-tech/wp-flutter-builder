@@ -7,6 +7,21 @@ import 'package:webview_flutter/webview_flutter.dart';
 
 import 'main.dart';
 
+/// Product attribute (color, size, warranty…) parsed from the API.
+class WpAttribute {
+  const WpAttribute({
+    required this.name,
+    required this.slug,
+    required this.options,
+    required this.variation,
+  });
+
+  final String name;
+  final String slug;
+  final List<String> options;
+  final bool variation;
+}
+
 /// Data model for a post or product returned by the plugin REST API.
 class WpItem {
   const WpItem({
@@ -20,6 +35,16 @@ class WpItem {
     this.price = '',
     this.regularPrice = '',
     this.salePrice = '',
+    this.sku = '',
+    this.inStock = true,
+    this.purchasable = true,
+    this.onSale = false,
+    this.stockQuantity,
+    this.rating = 0,
+    this.reviewsCount = 0,
+    this.galleryImages = const <String>[],
+    this.attributes = const <WpAttribute>[],
+    this.relatedProducts = const <WpItem>[],
   });
 
   final int id;
@@ -32,6 +57,16 @@ class WpItem {
   final String price;
   final String regularPrice;
   final String salePrice;
+  final String sku;
+  final bool inStock;
+  final bool purchasable;
+  final bool onSale;
+  final int? stockQuantity;
+  final double rating;
+  final int reviewsCount;
+  final List<String> galleryImages;
+  final List<WpAttribute> attributes;
+  final List<WpItem> relatedProducts;
 
   bool get isProduct => type == 'product';
 
@@ -51,6 +86,36 @@ class WpItem {
       price: (product['price'] as String?) ?? '',
       regularPrice: (product['regular_price'] as String?) ?? '',
       salePrice: (product['sale_price'] as String?) ?? '',
+      sku: (product['sku'] as String?) ?? '',
+      inStock: product['in_stock'] == null ? true : product['in_stock'] == true,
+      purchasable:
+          product['purchasable'] == null ? true : product['purchasable'] == true,
+      onSale: product['on_sale'] == true,
+      stockQuantity: (product['stock_quantity'] as num?)?.toInt(),
+      rating: (product['rating'] as num?)?.toDouble() ?? 0,
+      reviewsCount: (product['reviews_count'] as num?)?.toInt() ?? 0,
+      galleryImages: (product['gallery_images'] as List?)
+              ?.whereType<String>()
+              .toList(growable: false) ??
+          const <String>[],
+      attributes: (product['attributes'] as List?)
+              ?.whereType<Map<String, dynamic>>()
+              .map((Map<String, dynamic> attribute) => WpAttribute(
+                    name: (attribute['name'] as String?) ?? '',
+                    slug: (attribute['slug'] as String?) ?? '',
+                    options: (attribute['options'] as List?)
+                            ?.whereType<String>()
+                            .toList(growable: false) ??
+                        const <String>[],
+                    variation: attribute['variation'] == true,
+                  ))
+              .toList(growable: false) ??
+          const <WpAttribute>[],
+      relatedProducts: (product['related_products'] as List?)
+              ?.whereType<Map<String, dynamic>>()
+              .map(WpItem.fromMap)
+              .toList(growable: false) ??
+          const <WpItem>[],
     );
   }
 }
@@ -523,7 +588,7 @@ class WpPriceRow extends StatelessWidget {
   }
 }
 
-class NativeDetailScreen extends StatelessWidget {
+class NativeDetailScreen extends StatefulWidget {
   const NativeDetailScreen({
     super.key,
     required this.item,
@@ -532,6 +597,70 @@ class NativeDetailScreen extends StatelessWidget {
 
   final WpItem item;
   final AppConfig config;
+
+  @override
+  State<NativeDetailScreen> createState() => _NativeDetailScreenState();
+}
+
+class _NativeDetailScreenState extends State<NativeDetailScreen> {
+  final PageController _galleryController = PageController();
+  int _galleryPage = 0;
+
+  WpItem get item => widget.item;
+  AppConfig get config => widget.config;
+
+  @override
+  void dispose() {
+    _galleryController.dispose();
+    super.dispose();
+  }
+
+  Widget _buildGallery() {
+    final List<String> images = item.galleryImages.isNotEmpty
+        ? item.galleryImages
+        : (item.featuredImage.isNotEmpty
+            ? <String>[item.featuredImage]
+            : <String>[]);
+    if (images.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Column(
+      children: <Widget>[
+        SizedBox(
+          height: 280,
+          child: PageView.builder(
+            controller: _galleryController,
+            itemCount: images.length,
+            onPageChanged: (int index) => setState(() => _galleryPage = index),
+            itemBuilder: (BuildContext context, int index) => Image.network(
+              AppConfig.mapEmulatorUrl(images[index]),
+              width: double.infinity,
+              fit: BoxFit.cover,
+              errorBuilder: (_, Object? error, StackTrace? trace) =>
+                  const SizedBox(height: 280),
+            ),
+          ),
+        ),
+        if (images.length > 1)
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: List<Widget>.generate(images.length, (int index) {
+              return Container(
+                width: 7,
+                height: 7,
+                margin: const EdgeInsets.all(3),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: index == _galleryPage
+                      ? config.primaryColor
+                      : Colors.grey.shade300,
+                ),
+              );
+            }),
+          ),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -552,14 +681,7 @@ class NativeDetailScreen extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              if (item.featuredImage.isNotEmpty)
-                Image.network(
-                  AppConfig.mapEmulatorUrl(item.featuredImage),
-                  width: double.infinity,
-                  fit: BoxFit.cover,
-                  errorBuilder: (_, Object? error, StackTrace? trace) =>
-                      const SizedBox.shrink(),
-                ),
+              _buildGallery(),
               Padding(
                 padding: const EdgeInsets.all(16),
                 child: Column(
@@ -573,16 +695,100 @@ class NativeDetailScreen extends StatelessWidget {
                         height: 1.6,
                       ),
                     ),
+                    if (item.rating > 0) ...<Widget>[
+                      const SizedBox(height: 8),
+                      Row(
+                        children: <Widget>[
+                          const Icon(
+                            Icons.star_rounded,
+                            color: Color(0xFFF2A93B),
+                            size: 18,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            item.rating.toStringAsFixed(1),
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            '${item.reviewsCount} دیدگاه',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                     if (item.isProduct && item.price.isNotEmpty) ...<Widget>[
                       const SizedBox(height: 10),
                       WpPriceRow(item: item, accent: config.primaryColor),
+                    ],
+                    if (item.isProduct) ...<Widget>[
+                      const SizedBox(height: 10),
+                      if (!item.inStock)
+                        _StockBadge(
+                          text: 'ناموجود',
+                          color: const Color(0xFFD63638),
+                        )
+                      else if (item.stockQuantity != null &&
+                          item.stockQuantity! > 0 &&
+                          item.stockQuantity! <= 5)
+                        _StockBadge(
+                          text:
+                              'تنها ${item.stockQuantity} عدد در انبار باقیست!',
+                          color: const Color(0xFF996800),
+                        ),
+                      if (item.sku.isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 6),
+                          child: Text(
+                            'کد محصول: ${item.sku}',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        ),
+                    ],
+                    if (item.attributes.isNotEmpty) ...<Widget>[
+                      const SizedBox(height: 12),
+                      for (final WpAttribute attribute in item.attributes)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: <Widget>[
+                              Text(
+                                '${attribute.name}: ',
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              Expanded(
+                                child: Text(
+                                  attribute.options.join('، '),
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    height: 1.8,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                     ],
                     const SizedBox(height: 14),
                     if (item.isProduct && item.url.isNotEmpty) ...<Widget>[
                       SizedBox(
                         width: double.infinity,
                         child: FilledButton.icon(
-                          onPressed: () => Navigator.of(context).push(
+                          onPressed: item.purchasable
+                              ? () => Navigator.of(context).push(
                             MaterialPageRoute<void>(
                               builder: (_) => NativeWebViewScreen(
                                 url: AppConfig.mapEmulatorUrl(item.url),
@@ -592,7 +798,11 @@ class NativeDetailScreen extends StatelessWidget {
                             ),
                           ),
                           icon: const Icon(Icons.shopping_cart_checkout_rounded),
-                          label: const Text('مشاهده و خرید در سایت'),
+                          label: Text(
+                            item.purchasable
+                                ? 'مشاهده و خرید در سایت'
+                                : 'خرید در دسترس نیست',
+                          ),
                           style: FilledButton.styleFrom(
                             backgroundColor: config.primaryColor,
                             padding: const EdgeInsets.symmetric(vertical: 14),
@@ -605,6 +815,101 @@ class NativeDetailScreen extends StatelessWidget {
                       AppConfig.mapEmulatorUrl(item.content),
                       textStyle: const TextStyle(fontSize: 15, height: 1.9),
                     ),
+                    if (item.relatedProducts.isNotEmpty) ...<Widget>[
+                      const SizedBox(height: 22),
+                      Text(
+                        'خریداران این محصول، این کالاها را هم خریده‌اند',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          color: config.primaryColor,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        height: 235,
+                        child: ListView.builder(
+                          scrollDirection: Axis.horizontal,
+                          padding: const EdgeInsets.symmetric(horizontal: 2),
+                          itemCount: item.relatedProducts.length,
+                          itemBuilder: (BuildContext context, int index) {
+                            final WpItem related = item.relatedProducts[index];
+                            return SizedBox(
+                              width: 150,
+                              child: Card(
+                                margin: const EdgeInsets.all(4),
+                                clipBehavior: Clip.antiAlias,
+                                color: Colors.white,
+                                surfaceTintColor: Colors.transparent,
+                                elevation: 0.6,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: InkWell(
+                                  onTap: () => Navigator.of(context).push(
+                                    MaterialPageRoute<void>(
+                                      builder: (_) => NativeDetailScreen(
+                                        item: related,
+                                        config: config,
+                                      ),
+                                    ),
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.stretch,
+                                    children: <Widget>[
+                                      if (related.featuredImage.isNotEmpty)
+                                        Image.network(
+                                          AppConfig.mapEmulatorUrl(
+                                              related.featuredImage),
+                                          height: 110,
+                                          fit: BoxFit.cover,
+                                          errorBuilder: (_, Object? error,
+                                                  StackTrace? trace) =>
+                                              const SizedBox(height: 110),
+                                        ),
+                                      Padding(
+                                        padding: const EdgeInsets.all(8),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: <Widget>[
+                                            Text(
+                                              related.title,
+                                              style: const TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w700,
+                                              ),
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                            if (related.price.isNotEmpty)
+                                              Padding(
+                                                padding: const EdgeInsets.only(
+                                                    top: 4),
+                                                child: Text(
+                                                  related.price,
+                                                  style: TextStyle(
+                                                    fontSize: 12,
+                                                    fontWeight: FontWeight.w800,
+                                                    color: config.primaryColor,
+                                                  ),
+                                                  textDirection:
+                                                      TextDirection.ltr,
+                                                ),
+                                              ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -614,7 +919,32 @@ class NativeDetailScreen extends StatelessWidget {
       ),
     );
   }
+}
 
+class _StockBadge extends StatelessWidget {
+  const _StockBadge({required this.text, required this.color});
+
+  final String text;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: color,
+          fontSize: 12.5,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
 }
 
 class NativeSearchScreen extends StatefulWidget {
