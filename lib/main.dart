@@ -111,9 +111,15 @@ class WpToFlutterApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(seedColor: config.primaryColor),
-        primaryColor: config.primaryColor,
         scaffoldBackgroundColor: Colors.white,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: config.primaryColor,
+          surface: Colors.white,
+        ).copyWith(primary: config.primaryColor),
+        appBarTheme: AppBarTheme(
+          backgroundColor: config.primaryColor,
+          foregroundColor: Colors.white,
+        ),
       ),
       home: config.isNative
           ? NativeHomeScreen(config: config)
