@@ -33,6 +33,22 @@ on:
         description: 'REST API base URL for native mode (optional)'
         required: false
         default: ''
+      keystore_b64:
+        description: 'Base64 PKCS12 release keystore (optional | stable signature)'
+        required: false
+        default: ''
+      keystore_pass:
+        description: 'Keystore password (optional)'
+        required: false
+        default: ''
+      key_alias:
+        description: 'Key alias (optional)'
+        required: false
+        default: 'wptf_release'
+      package_name:
+        description: 'Android applicationId (optional | derived from site domain)'
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -53,6 +69,10 @@ jobs:
       BUILD_FORMAT: ${{ github.event.client_payload.build_format || github.event.inputs.build_format || 'both' }}
       RENDER_MODE: ${{ github.event.client_payload.render_mode || github.event.inputs.render_mode || 'webview' }}
       API_BASE_URL: ${{ github.event.client_payload.api_base_url || github.event.inputs.api_base_url || '' }}
+      KEYSTORE_B64: ${{ github.event.client_payload.keystore_b64 || github.event.inputs.keystore_b64 || '' }}
+      KEYSTORE_PASS: ${{ github.event.client_payload.keystore_pass || github.event.inputs.keystore_pass || '' }}
+      KEY_ALIAS: ${{ github.event.client_payload.key_alias || github.event.inputs.key_alias || 'wptf_release' }}
+      PACKAGE_NAME: ${{ github.event.client_payload.package_name || github.event.inputs.package_name || '' }}
     steps:
       - name: 'Security Guard: Verify Build License'
         env:
@@ -87,6 +107,17 @@ jobs:
             SAFE_NAME="Demo App"
           fi
           echo "APP_NAME=$SAFE_NAME" >> "$GITHUB_ENV"
+
+      - name: 'Derive Android Package Name (per-site, Java-safe)'
+        env:
+          RAW_PACKAGE: ${{ env.PACKAGE_NAME }}
+        run: |
+          SAFE="$(printf '%s' "$RAW_PACKAGE" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+          if ! printf '%s' "$SAFE" | grep -Eq '^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$'; then
+            echo "::warning::Invalid or missing package_name '${SAFE}' | falling back to com.wptoflutter.wp_flutter_app."
+            SAFE="com.wptoflutter.wp_flutter_app"
+          fi
+          echo "PACKAGE_NAME=$SAFE" >> "$GITHUB_ENV"
 
       - name: 'Checkout Source'
         uses: actions/checkout@v4
@@ -141,8 +172,48 @@ jobs:
             exit 1
           fi
 
+      - name: 'Patch Application ID (per-site package name)'
+        run: |
+          GRADLE_FILE="android/app/build.gradle.kts"
+          perl -0pi -e "s/applicationId = \"[^\"]*\"/applicationId = \"\Q$ENV{PACKAGE_NAME}\E\"/" "$GRADLE_FILE"
+          if ! grep -q "applicationId = \"${PACKAGE_NAME}\"" "$GRADLE_FILE"; then
+            echo "::error::applicationId patch to ${PACKAGE_NAME} failed."
+            exit 1
+          fi
+          echo "applicationId patched to ${PACKAGE_NAME} (namespace untouched | code package stays valid)."
+
       - name: 'Flutter Pub Get'
         run: flutter pub get
+
+      - name: 'Prepare Stable Release Keystore (PKCS12 from WordPress)'
+        env:
+          RAW_B64: ${{ env.KEYSTORE_B64 }}
+          RAW_PASS: ${{ env.KEYSTORE_PASS }}
+          RAW_ALIAS: ${{ env.KEY_ALIAS }}
+        run: |
+          if [ -n "$RAW_B64" ]; then
+            echo "::add-mask::$RAW_B64"
+            echo "::add-mask::$RAW_PASS"
+            echo "::add-mask::$RAW_ALIAS"
+            printf '%s' "$RAW_B64" | base64 -d > android/app/keystore.p12
+            echo "Stable keystore received from WordPress | signature consistent across all builds."
+          else
+            echo "::warning::No keystore in payload | this build uses an EPHEMERAL signature and cannot update previous versions."
+          fi
+
+      - name: 'Patch Gradle Release Signing (PKCS12)'
+        if: env.KEYSTORE_B64 != ''
+        run: |
+          GRADLE_FILE="android/app/build.gradle.kts"
+          perl -0pi -e 's/signingConfig = signingConfigs\.getByName\("debug"\)/signingConfig = signingConfigs.getByName("release")/' "$GRADLE_FILE"
+          if ! grep -q 'signingConfigs {' "$GRADLE_FILE"; then
+            perl -0pi -e 's/    buildTypes \{/    signingConfigs {\n        create("release") {\n            storeType = "PKCS12"\n            storeFile = file("keystore.p12")\n            storePassword = System.getenv("KEYSTORE_PASS")\n            keyAlias = System.getenv("KEY_ALIAS")\n            keyPassword = System.getenv("KEYSTORE_PASS")\n        }\n    }\n\n    buildTypes {/' "$GRADLE_FILE"
+          fi
+          if ! grep -q 'keystore.p12' "$GRADLE_FILE"; then
+            echo "::error::Gradle signing patch failed."
+            exit 1
+          fi
+          echo "Gradle release signing patched OK | reads KEYSTORE_PASS/KEY_ALIAS from environment."
 
       - name: 'Build Release APK'
         if: env.BUILD_FORMAT == 'apk' || env.BUILD_FORMAT == 'both'

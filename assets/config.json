@@ -1,1 +1,7 @@
-{"app_name": "Demo App", "site_url": "https://example.com", "primary_color": "#2271b1"}
+{
+  "app_name": "گجتال",
+  "site_url": "http://10.0.2.2/",
+  "primary_color": "#000000",
+  "render_mode": "native",
+  "api_base_url": "http://10.0.2.2/wp-json/wp-to-flutter/v1/"
+}

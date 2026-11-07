@@ -9,6 +9,14 @@ import 'package:webview_flutter_android/webview_flutter_android.dart';
 
 import 'native_mode.dart';
 
+/// بنر اسلایدر خانه | تصویر + لینک مقصد (لینک خالی = کلیک‌ناپذیر).
+class NativeBanner {
+  const NativeBanner({required this.image, this.link = ''});
+
+  final String image;
+  final String link;
+}
+
 /// Application identity injected by the WP to Flutter cloud build engine.
 class AppConfig {
   const AppConfig({
@@ -17,6 +25,16 @@ class AppConfig {
     required this.primaryColor,
     this.apiBaseUrl = '',
     this.renderMode = 'webview',
+    this.categoryCanvas = 400,
+    this.banners = const <NativeBanner>[],
+    this.sliderInterval = 5,
+    this.offerCountdownEnd = '',
+    this.logoUrl = '',
+    this.headerLogoUrl = '',
+    this.headerLogoName = '',
+    this.searchSuggestions = const <String>[],
+    this.reviewsRequireLogin = false,
+    this.reviewsGuestPost = true,
   });
 
   final String appName;
@@ -24,6 +42,40 @@ class AppConfig {
   final Color primaryColor;
   final String apiBaseUrl;
   final String renderMode;
+
+  /// اندازه کانواس دسته‌بندی (پیکسل) | از تنظیمات WP خوانده می‌شود.
+  /// دایره‌ی نمایشی = این مقدار ÷ ۴ (کلمپ ۶۴ تا ۱۲۸)، در skeleton.dart.
+  final int categoryCanvas;
+
+  /// بنرهای اسلایدر خانه (حداکثر ۴) | به ترتیب نمایش، از تنظیمات WP.
+  final List<NativeBanner> banners;
+
+  /// فاصله تعویض خودکار اسلایدها (ثانیه).
+  final int sliderInterval;
+
+  /// پایان شمارش معکوس «پیشنهاد شگفت‌انگیز» | ISO-8601 با آفست سایت.
+  /// خالی = بدون شمارش معکوس.
+  final String offerCountdownEnd;
+
+  /// لوگوی سایت (از endpoint تنظیمات) | اگر باشد در هدر نیتیو نمایش
+  /// داده می‌شود؛ وگرنه نام اپ به‌شکل نشان برند.
+  final String logoUrl;
+
+  /// لوگوی نهایی هدر طبق تصمیم سرور (کارت تنظیم نیتیو شماره ۴):
+  /// اختصاصی فعال؟ → همان؛ وگرنه لوگوی سایت. خالی = بدون تصویر.
+  final String headerLogoUrl;
+
+  /// نام کنار لوگوی هدر | خالی یعنی فقط لوگو.
+  final String headerLogoName;
+
+  /// واژه‌های پیشنهادی جستجو (تنظیم نیتیو شماره ۵) | حداکثر ۴.
+  final List<String> searchSuggestions;
+
+  /// دیدگاه فقط برای کاربران واردشده با شماره موبایل (کارت ۸).
+  final bool reviewsRequireLogin;
+
+  /// مهمان‌ها بدون هدایت به پروفایل بتوانند دیدگاه بدهند (حالت مقابل).
+  final bool reviewsGuestPost;
 
   bool get isNative => renderMode == 'native';
 
@@ -87,9 +139,94 @@ class AppConfig {
   static Future<AppConfig> load() async {
     final String raw = await rootBundle.loadString('assets/config.json');
     final dynamic decoded = jsonDecode(raw);
-    return AppConfig.fromMap(
+    final AppConfig config = AppConfig.fromMap(
       decoded is Map<String, dynamic> ? decoded : <String, dynamic>{},
     );
+    // فقط نیتیو تنظیمات زنده می‌خواهد؛ وب‌ویو مستقیم می‌رود سراغ سایت.
+    return config.isNative
+        ? config.refreshRemoteSettings().timeout(
+            const Duration(seconds: 3),
+            onTimeout: () => config,
+          )
+        : config;
+  }
+
+  /// ادغام تنظیمات زنده از endpoint تنظیمات وردپرس، تا اسکلتون از همان
+  /// فریم اول سایز درست را بلد باشد و بنرها هم تازه باشند. هر خطایی =
+  /// همان مقدار config.json.
+  Future<AppConfig> refreshRemoteSettings() async {
+    HttpClient? client;
+    try {
+      client = HttpClient()
+        ..connectionTimeout = const Duration(seconds: 2);
+      final HttpClientRequest request = await client
+          .getUrl(Uri.parse('${effectiveApiBaseUrl}config'));
+      final HttpClientResponse response = await request.close();
+      if (response.statusCode != 200) return this;
+      final String body = await response.transform(utf8.decoder).join();
+      final dynamic decoded = jsonDecode(body);
+      if (decoded is! Map<String, dynamic>) return this;
+      return AppConfig(
+        appName: appName,
+        siteUrl: siteUrl,
+        primaryColor: primaryColor,
+        apiBaseUrl: apiBaseUrl,
+        renderMode: renderMode,
+        categoryCanvas:
+            (decoded['category_canvas_size'] as num?)?.toInt() ??
+                categoryCanvas,
+        banners: AppConfig.parseBanners(decoded['native_banners']),
+        offerCountdownEnd:
+            ((decoded['offer_countdown_end'] as String?) ?? '').trim(),
+        logoUrl: AppConfig.mapEmulatorUrl(
+          ((decoded['logo_url'] as String?) ?? '').trim(),
+        ),
+        headerLogoUrl: AppConfig.mapEmulatorUrl(
+          (((decoded['header_logo'] as Map?)?['url'] as String?) ?? '').trim(),
+        ),
+        headerLogoName:
+            (((decoded['header_logo'] as Map?)?['name'] as String?) ?? '')
+                .trim(),
+        searchSuggestions: ((decoded['search_suggestions'] as List?) ??
+                const <dynamic>[])
+            .map((dynamic term) => ((term as String?) ?? '').trim())
+            .where((String term) => term.isNotEmpty)
+            .take(4)
+            .toList(growable: false),
+        reviewsRequireLogin: decoded['reviews_require_login'] == true,
+        reviewsGuestPost: decoded['reviews_guest_post'] != false,
+        sliderInterval:
+            ((decoded['slider_interval'] as num?)?.toInt() ?? sliderInterval)
+                .clamp(3, 15),
+      );
+    } catch (_) {
+      return this;
+    } finally {
+      client?.close(force: true);
+    }
+  }
+
+  /// تبدیل خروجی native_banners به مدل | هم آبجکت {image, link} و هم
+  /// رشته‌ی ساده (سازگاری) پذیرفته می‌شود؛ بنرهای بی‌تصویر حذف می‌شوند.
+  static List<NativeBanner> parseBanners(dynamic raw) {
+    return ((raw as List?) ?? const <dynamic>[])
+        .map((dynamic item) {
+          if (item is Map<String, dynamic>) {
+            return NativeBanner(
+              image: AppConfig.mapEmulatorUrl(
+                ((item['image'] as String?) ?? '').trim(),
+              ),
+              link: ((item['link'] as String?) ?? '').trim(),
+            );
+          }
+          if (item is String) {
+            return NativeBanner(image: AppConfig.mapEmulatorUrl(item.trim()));
+          }
+          return null;
+        })
+        .whereType<NativeBanner>()
+        .where((NativeBanner banner) => banner.image.isNotEmpty)
+        .toList(growable: false);
   }
 }
 
@@ -288,7 +425,7 @@ class _WebViewHomeScreenState extends State<WebViewHomeScreen> {
     try {
       await _controller.runJavaScript(_mobileFixesJs);
     } catch (_) {
-      // DOM not ready yet — the onPageFinished pass re-runs the script.
+      // DOM not ready yet | the onPageFinished pass re-runs the script.
     }
   }
 
