@@ -25,5 +25,7 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  # کل پوشه assets بستهبندی میشود تا بیلد ابری بتواند لوگوی اسپلش را
+  # به صورت assets/splash_logo.png کنار config.json تزریق کند (لود در فریم اول).
   assets:
-    - assets/config.json
+    - assets/

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- اندروید ۱۲+ (API 31) پیش از آماده شدن فلاتر، اسپلش سیستمی خودش را رسم میکند.
+     اینجا پسزمینهاش همرنگ برند است و آیکون پیشفرض فلاتر کاملاً محو میشود تا
+     نه لوگوی ناخواسته و نه دایره سفید دیده شود. -->
+<resources>
+    <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
+        <item name="android:windowSplashScreenBackground">@color/launch_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@android:color/transparent</item>
+        <item name="android:windowSplashScreenIconBackgroundColor">@android:color/transparent</item>
+        <item name="android:windowBackground">@drawable/launch_background</item>
+    </style>
+</resources>

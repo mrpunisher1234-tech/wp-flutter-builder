@@ -1,13 +1,16 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 
 import 'native_mode.dart';
+import 'splash_screen.dart';
 
 /// بنر اسلایدر خانه | تصویر + لینک مقصد (لینک خالی = کلیک‌ناپذیر).
 class NativeBanner {
@@ -16,6 +19,10 @@ class NativeBanner {
   final String image;
   final String link;
 }
+
+/// مسیر لوگوی اسپلشی که بیلد ابری داخل APK میگذارد.
+/// وجود این فایل یعنی اسپلش در فریم اول و بدون انتظار شبکه رسم میشود.
+const String kSplashLogoAssetPath = 'assets/splash_logo.png';
 
 /// Application identity injected by the WP to Flutter cloud build engine.
 class AppConfig {
@@ -30,11 +37,21 @@ class AppConfig {
     this.sliderInterval = 5,
     this.offerCountdownEnd = '',
     this.logoUrl = '',
+    this.appIconUrl = '',
     this.headerLogoUrl = '',
     this.headerLogoName = '',
     this.searchSuggestions = const <String>[],
     this.reviewsRequireLogin = false,
     this.reviewsGuestPost = true,
+    this.splashImageUrl = '',
+    this.splashLogoUrl = '',
+    this.splashBackgroundHex = '',
+    this.splashText = '',
+    this.splashTextHex = '',
+    this.splashShowLogo = true,
+    this.splashSiteIconUrl = '',
+    this.splashSiteName = '',
+    this.splashLogoBundledUrl = '',
   });
 
   final String appName;
@@ -42,44 +59,89 @@ class AppConfig {
   final Color primaryColor;
   final String apiBaseUrl;
   final String renderMode;
-
-  /// اندازه کانواس دسته‌بندی (پیکسل) | از تنظیمات WP خوانده می‌شود.
-  /// دایره‌ی نمایشی = این مقدار ÷ ۴ (کلمپ ۶۴ تا ۱۲۸)، در skeleton.dart.
   final int categoryCanvas;
-
-  /// بنرهای اسلایدر خانه (حداکثر ۴) | به ترتیب نمایش، از تنظیمات WP.
   final List<NativeBanner> banners;
-
-  /// فاصله تعویض خودکار اسلایدها (ثانیه).
   final int sliderInterval;
-
-  /// پایان شمارش معکوس «پیشنهاد شگفت‌انگیز» | ISO-8601 با آفست سایت.
-  /// خالی = بدون شمارش معکوس.
   final String offerCountdownEnd;
-
-  /// لوگوی سایت (از endpoint تنظیمات) | اگر باشد در هدر نیتیو نمایش
-  /// داده می‌شود؛ وگرنه نام اپ به‌شکل نشان برند.
   final String logoUrl;
-
-  /// لوگوی نهایی هدر طبق تصمیم سرور (کارت تنظیم نیتیو شماره ۴):
-  /// اختصاصی فعال؟ → همان؛ وگرنه لوگوی سایت. خالی = بدون تصویر.
+  final String appIconUrl;
   final String headerLogoUrl;
-
-  /// نام کنار لوگوی هدر | خالی یعنی فقط لوگو.
   final String headerLogoName;
-
-  /// واژه‌های پیشنهادی جستجو (تنظیم نیتیو شماره ۵) | حداکثر ۴.
   final List<String> searchSuggestions;
-
-  /// دیدگاه فقط برای کاربران واردشده با شماره موبایل (کارت ۸).
   final bool reviewsRequireLogin;
-
-  /// مهمان‌ها بدون هدایت به پروفایل بتوانند دیدگاه بدهند (حالت مقابل).
   final bool reviewsGuestPost;
+  final String splashImageUrl;
+  final String splashBackgroundHex;
+  final String splashText;
+  final String splashTextHex;
+  final bool splashShowLogo;
+  final String splashSiteIconUrl;
+  final String splashSiteName;
+
+  /// لوگوی حلشده در سمت وردپرس | دقیقاً همان آدرسی که بیلد ابری دانلود کرده است.
+  final String splashLogoUrl;
+
+  /// آدرس لوگویی که در زمان بیلد داخل APK بستهبندی شده (خالی = بستهبندی نشده).
+  /// با مقدار زنده مقایسه میشود تا اگر ادمین بعداً لوگو را عوض کرد، نسخه قدیمی نشان داده نشود.
+  final String splashLogoBundledUrl;
+
+  /// لوگوی نهایی اسپلش | اولویت حلشده سمت وردپرس، وگرنه:
+  /// ۱. لوگوی اختصاصی اسپلش، ۲. آیکون سایت، ۳. آیکون رسمی اپ.
+  String get resolvedSplashLogoUrl {
+    if (!splashShowLogo) {
+      return '';
+    }
+    if (splashLogoUrl.isNotEmpty) {
+      return splashLogoUrl;
+    }
+    if (splashImageUrl.isNotEmpty) {
+      return splashImageUrl;
+    }
+    if (splashSiteIconUrl.isNotEmpty) {
+      return splashSiteIconUrl;
+    }
+    if (appIconUrl.isNotEmpty) {
+      return appIconUrl;
+    }
+    return '';
+  }
+
+  /// لوگوی شبکه | وقتی فایل بستهبندیشده در دسترس نیست یا منقضی شده است.
+  ImageProvider? get splashLogoNetworkProvider {
+    final String url = resolvedSplashLogoUrl;
+    return url.isEmpty ? null : NetworkImage(url);
+  }
+
+  /// لوگویی که در فریم اول و بدون انتظار شبکه قابل استفاده است.
+  /// فقط وقتی فایل داخلی معتبر است که آدرس زنده با آدرس بستهبندیشده یکی باشد.
+  ImageProvider? get splashLogoProvider {
+    final String live = resolvedSplashLogoUrl;
+    if (live.isEmpty || splashLogoBundledUrl.isEmpty) {
+      return splashLogoNetworkProvider;
+    }
+    final String bundled = mapEmulatorUrl(splashLogoBundledUrl.trim());
+    if (bundled.isEmpty || bundled != live) {
+      return splashLogoNetworkProvider;
+    }
+    return const AssetImage(kSplashLogoAssetPath);
+  }
+
+  Color get splashBackgroundColor =>
+      parseHexColor(splashBackgroundHex, fallback: primaryColor);
+
+  Color get splashTextColor =>
+      parseHexColor(splashTextHex, fallback: const Color(0xFFFFFFFF));
+
+  String get splashLoadingText =>
+      splashText.trim().isNotEmpty ? splashText.trim() : 'در حال لودینگ';
+
+  String get splashBrandText {
+    final String name = splashSiteName.trim();
+    return name.isNotEmpty ? name : appName;
+  }
 
   bool get isNative => renderMode == 'native';
 
-  /// Resolved REST root consumed by the native render mode.
   String get effectiveApiBaseUrl {
     if (apiBaseUrl.isNotEmpty) {
       return apiBaseUrl.endsWith('/') ? apiBaseUrl : '$apiBaseUrl/';
@@ -90,6 +152,14 @@ class AppConfig {
 
   factory AppConfig.fromMap(Map<String, dynamic> map) {
     final String rawApiBase = ((map['api_base_url'] as String?) ?? '').trim();
+    final Map<dynamic, dynamic> app =
+        (map['app'] as Map<dynamic, dynamic>?) ?? <dynamic, dynamic>{};
+    final Map<dynamic, dynamic> icon =
+        (app['icon'] as Map<dynamic, dynamic>?) ?? <dynamic, dynamic>{};
+    final String resolvedAppIcon = AppConfig.mapEmulatorUrl(
+      ((icon['url'] as String?) ?? (map['app_icon_url'] as String?) ?? '').trim(),
+    );
+
     return AppConfig(
       appName: _readName(map['app_name']),
       siteUrl: normalizeSiteUrl((map['site_url'] as String?) ?? ''),
@@ -97,10 +167,9 @@ class AppConfig {
         (map['primary_color'] as String?) ?? '',
         fallback: const Color(0xFF2271B1),
       ),
-      apiBaseUrl:
-          rawApiBase.isEmpty ? '' : normalizeSiteUrl(rawApiBase),
-      renderMode:
-          (map['render_mode'] as String?) == 'native' ? 'native' : 'webview',
+      apiBaseUrl: rawApiBase.isEmpty ? '' : normalizeSiteUrl(rawApiBase),
+      appIconUrl: resolvedAppIcon,
+      renderMode: (map['render_mode'] as String?) == 'native' ? 'native' : 'webview',
     );
   }
 
@@ -118,8 +187,6 @@ class AppConfig {
     return mapEmulatorUrl(url);
   }
 
-  /// Rewrites developer hosts to the Android emulator alias (10.0.2.2) so
-  /// local WordPress sites load from the device; real domains stay intact.
   static String mapEmulatorUrl(String url) {
     if (Platform.isAndroid &&
         (url.contains('://localhost') || url.contains('://127.0.0.1'))) {
@@ -139,56 +206,162 @@ class AppConfig {
   static Future<AppConfig> load() async {
     final String raw = await rootBundle.loadString('assets/config.json');
     final dynamic decoded = jsonDecode(raw);
-    final AppConfig config = AppConfig.fromMap(
+    AppConfig config = AppConfig.fromMap(
       decoded is Map<String, dynamic> ? decoded : <String, dynamic>{},
-    );
-    // فقط نیتیو تنظیمات زنده می‌خواهد؛ وب‌ویو مستقیم می‌رود سراغ سایت.
-    return config.isNative
-        ? config.refreshRemoteSettings().timeout(
-            const Duration(seconds: 3),
-            onTimeout: () => config,
-          )
-        : config;
+    ).withSplash(decoded is Map<String, dynamic> ? decoded : <String, dynamic>{});
+
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      config = config.withSplash(<String, dynamic>{
+        'app_icon_url': prefs.getString('wptf_app_icon_url') ?? '',
+        'splash_logo_bundled_url': prefs.getString('wptf_splash_logo_bundled_url') ?? '',
+        'app': <String, dynamic>{
+          'icon': <String, dynamic>{
+            'url': prefs.getString('wptf_app_icon_url') ?? '',
+          },
+          'splash': <String, dynamic>{
+            'url': prefs.getString('wptf_splash_url') ?? '',
+            'logo_url': prefs.getString('wptf_splash_logo_url') ?? '',
+            'show_logo': prefs.getBool('wptf_splash_show_logo') ?? true,
+            'site_icon_url': prefs.getString('wptf_splash_site_icon') ?? '',
+            'site_name': prefs.getString('wptf_splash_site_name') ?? '',
+            'bg_color': prefs.getString('wptf_splash_bg') ?? '',
+            'text': prefs.getString('wptf_splash_text') ?? '',
+            'text_color': prefs.getString('wptf_splash_text_color') ?? '',
+          },
+        },
+      });
+    } catch (_) {}
+    return config;
   }
 
-  /// ادغام تنظیمات زنده از endpoint تنظیمات وردپرس، تا اسکلتون از همان
-  /// فریم اول سایز درست را بلد باشد و بنرها هم تازه باشند. هر خطایی =
-  /// همان مقدار config.json.
+  AppConfig withSplash(Map<String, dynamic> map) {
+    final Map<dynamic, dynamic> app =
+        (map['app'] as Map<dynamic, dynamic>?) ?? <dynamic, dynamic>{};
+    final Map<dynamic, dynamic> splash =
+        (app['splash'] as Map<dynamic, dynamic>?) ??
+        (map['splash'] as Map<dynamic, dynamic>?) ??
+        <dynamic, dynamic>{};
+    final Map<dynamic, dynamic> icon =
+        (app['icon'] as Map<dynamic, dynamic>?) ?? <dynamic, dynamic>{};
+    final dynamic liveAppIcon = icon['url'] ?? map['app_icon_url'];
+    final String resolvedAppIcon = liveAppIcon == null || liveAppIcon.toString().trim().isEmpty
+        ? appIconUrl
+        : AppConfig.mapEmulatorUrl(liveAppIcon.toString().trim());
+
+    String pickText(String inner, String flat, String inherited) {
+      final dynamic a = splash[inner];
+      if (a != null && a.toString().trim().isNotEmpty) {
+        return a.toString().trim();
+      }
+      final dynamic b = map[flat];
+      if (b != null && b.toString().trim().isNotEmpty) {
+        return b.toString().trim();
+      }
+      return inherited;
+    }
+
+    bool pickBool(String inner, String flat, bool inherited) {
+      final dynamic a = splash.containsKey(inner)
+          ? splash[inner]
+          : (map.containsKey(flat) ? map[flat] : null);
+      if (a != null) {
+        return a == true || a == 1 || a == '1';
+      }
+      return inherited;
+    }
+
+    return AppConfig(
+      appName: appName,
+      siteUrl: siteUrl,
+      primaryColor: primaryColor,
+      apiBaseUrl: apiBaseUrl,
+      renderMode: renderMode,
+      categoryCanvas: categoryCanvas,
+      banners: banners,
+      sliderInterval: sliderInterval,
+      offerCountdownEnd: offerCountdownEnd,
+      logoUrl: logoUrl,
+      appIconUrl: resolvedAppIcon,
+      headerLogoUrl: headerLogoUrl,
+      headerLogoName: headerLogoName,
+      searchSuggestions: searchSuggestions,
+      reviewsRequireLogin: reviewsRequireLogin,
+      reviewsGuestPost: reviewsGuestPost,
+      splashImageUrl: AppConfig.mapEmulatorUrl(
+        pickText('url', 'splash_image_url', splashImageUrl),
+      ),
+      splashLogoUrl: AppConfig.mapEmulatorUrl(
+        pickText('logo_url', 'splash_logo_url', splashLogoUrl),
+      ),
+      splashBackgroundHex: pickText(
+        'bg_color',
+        'splash_bg_color',
+        splashBackgroundHex,
+      ),
+      splashText: pickText('text', 'splash_text', splashText),
+      splashTextHex: pickText(
+        'text_color',
+        'splash_text_color',
+        splashTextHex,
+      ),
+      splashShowLogo: pickBool(
+        'show_logo',
+        'splash_show_logo',
+        splashShowLogo,
+      ),
+      splashSiteIconUrl: AppConfig.mapEmulatorUrl(
+        pickText('site_icon_url', 'splash_site_icon', splashSiteIconUrl),
+      ),
+      splashSiteName: pickText(
+        'site_name',
+        'splash_site_name',
+        splashSiteName,
+      ),
+      // این دو مقدار در زمان بیلد تثبیت شدهاند و هرگز از راه دور بازنویسی نمیشوند.
+      splashLogoBundledUrl: pickText(
+        'logo_bundled_url',
+        'splash_logo_bundled_url',
+        splashLogoBundledUrl,
+      ),
+    );
+  }
+
   Future<AppConfig> refreshRemoteSettings() async {
     HttpClient? client;
     try {
-      client = HttpClient()
-        ..connectionTimeout = const Duration(seconds: 2);
-      final HttpClientRequest request = await client
-          .getUrl(Uri.parse('${effectiveApiBaseUrl}config'));
+      client = HttpClient()..connectionTimeout = const Duration(seconds: 4);
+      final HttpClientRequest request =
+          await client.getUrl(Uri.parse('${effectiveApiBaseUrl}config'));
       final HttpClientResponse response = await request.close();
       if (response.statusCode != 200) return this;
       final String body = await response.transform(utf8.decoder).join();
       final dynamic decoded = jsonDecode(body);
       if (decoded is! Map<String, dynamic>) return this;
-      return AppConfig(
+
+      final AppConfig base = AppConfig(
         appName: appName,
         siteUrl: siteUrl,
         primaryColor: primaryColor,
         apiBaseUrl: apiBaseUrl,
         renderMode: renderMode,
         categoryCanvas:
-            (decoded['category_canvas_size'] as num?)?.toInt() ??
-                categoryCanvas,
+            (decoded['category_canvas_size'] as num?)?.toInt() ?? categoryCanvas,
         banners: AppConfig.parseBanners(decoded['native_banners']),
         offerCountdownEnd:
             ((decoded['offer_countdown_end'] as String?) ?? '').trim(),
         logoUrl: AppConfig.mapEmulatorUrl(
           ((decoded['logo_url'] as String?) ?? '').trim(),
         ),
+        appIconUrl: AppConfig.mapEmulatorUrl(
+          (((decoded['app'] as Map?)?['icon'] as Map?)?['url'] as String? ?? appIconUrl).trim(),
+        ),
         headerLogoUrl: AppConfig.mapEmulatorUrl(
           (((decoded['header_logo'] as Map?)?['url'] as String?) ?? '').trim(),
         ),
         headerLogoName:
-            (((decoded['header_logo'] as Map?)?['name'] as String?) ?? '')
-                .trim(),
-        searchSuggestions: ((decoded['search_suggestions'] as List?) ??
-                const <dynamic>[])
+            (((decoded['header_logo'] as Map?)?['name'] as String?) ?? '').trim(),
+        searchSuggestions: ((decoded['search_suggestions'] as List?) ?? const <dynamic>[])
             .map((dynamic term) => ((term as String?) ?? '').trim())
             .where((String term) => term.isNotEmpty)
             .take(4)
@@ -196,9 +369,21 @@ class AppConfig {
         reviewsRequireLogin: decoded['reviews_require_login'] == true,
         reviewsGuestPost: decoded['reviews_guest_post'] != false,
         sliderInterval:
-            ((decoded['slider_interval'] as num?)?.toInt() ?? sliderInterval)
-                .clamp(3, 15),
+            ((decoded['slider_interval'] as num?)?.toInt() ?? sliderInterval).clamp(3, 15),
+        // مقادیر اسپلش عیناً منتقل میشوند تا اگر پاسخ سرور ناقص بود، مقدار فعلی از دست نرود.
+        splashImageUrl: splashImageUrl,
+        splashLogoUrl: splashLogoUrl,
+        splashBackgroundHex: splashBackgroundHex,
+        splashText: splashText,
+        splashTextHex: splashTextHex,
+        splashShowLogo: splashShowLogo,
+        splashSiteIconUrl: splashSiteIconUrl,
+        splashSiteName: splashSiteName,
+        // واقعیت زمان بیلد | همیشه از داخل اپ میآید، نه از سرور.
+        splashLogoBundledUrl: splashLogoBundledUrl,
       );
+
+      return base.withSplash(decoded);
     } catch (_) {
       return this;
     } finally {
@@ -206,16 +391,28 @@ class AppConfig {
     }
   }
 
-  /// تبدیل خروجی native_banners به مدل | هم آبجکت {image, link} و هم
-  /// رشته‌ی ساده (سازگاری) پذیرفته می‌شود؛ بنرهای بی‌تصویر حذف می‌شوند.
+  Future<void> cacheSplash() async {
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      await prefs.setString('wptf_app_icon_url', appIconUrl);
+      await prefs.setString('wptf_splash_url', splashImageUrl);
+      await prefs.setString('wptf_splash_logo_url', splashLogoUrl);
+      await prefs.setString('wptf_splash_logo_bundled_url', splashLogoBundledUrl);
+      await prefs.setBool('wptf_splash_show_logo', splashShowLogo);
+      await prefs.setString('wptf_splash_site_icon', splashSiteIconUrl);
+      await prefs.setString('wptf_splash_site_name', splashSiteName);
+      await prefs.setString('wptf_splash_bg', splashBackgroundHex);
+      await prefs.setString('wptf_splash_text', splashText);
+      await prefs.setString('wptf_splash_text_color', splashTextHex);
+    } catch (_) {}
+  }
+
   static List<NativeBanner> parseBanners(dynamic raw) {
     return ((raw as List?) ?? const <dynamic>[])
         .map((dynamic item) {
           if (item is Map<String, dynamic>) {
             return NativeBanner(
-              image: AppConfig.mapEmulatorUrl(
-                ((item['image'] as String?) ?? '').trim(),
-              ),
+              image: AppConfig.mapEmulatorUrl(((item['image'] as String?) ?? '').trim()),
               link: ((item['link'] as String?) ?? '').trim(),
             );
           }
@@ -258,9 +455,117 @@ class WpToFlutterApp extends StatelessWidget {
           foregroundColor: Colors.white,
         ),
       ),
-      home: config.isNative
-          ? NativeHomeScreen(config: config)
-          : WebViewHomeScreen(config: config),
+      home: _SplashGate(config: config),
+    );
+  }
+}
+
+class _SplashGate extends StatefulWidget {
+  const _SplashGate({required this.config});
+
+  final AppConfig config;
+
+  @override
+  State<_SplashGate> createState() => _SplashGateState();
+}
+
+class _SplashGateState extends State<_SplashGate>
+    with SingleTickerProviderStateMixin {
+  /// طول عمر اسپلش | دقیقاً ۲ ثانیه، مستقل از شبکه یا پاسخ سرور.
+  static const Duration _splashLifetime = Duration(milliseconds: 2000);
+
+  /// سهم انتهایی از ۲ ثانیه که صرف محو شدن میشود (۱.۷۵ ثانیه نمایش کامل، ۰.۲۵ ثانیه محو).
+  static const double _fadeStart = 0.875;
+
+  late final AnimationController _lifecycle;
+  late AppConfig _current;
+  AppConfig? _pending;
+
+  @override
+  void initState() {
+    super.initState();
+    _current = widget.config;
+
+    _lifecycle = AnimationController(vsync: this, duration: _splashLifetime)
+      ..addStatusListener((AnimationStatus status) {
+        if (status == AnimationStatus.completed) {
+          _applyPending();
+        }
+      })
+      ..forward();
+
+    // دریافت تنظیمات در پسزمینه (هم وبویو و هم نیتیو) کاملاً غیرمسدودکننده.
+    _syncRemoteSettings();
+  }
+
+  Future<void> _syncRemoteSettings() async {
+    try {
+      final AppConfig updated = await widget.config
+          .refreshRemoteSettings()
+          .timeout(const Duration(seconds: 6), onTimeout: () => widget.config);
+      if (identical(updated, widget.config)) {
+        return;
+      }
+      updated.cacheSplash();
+      if (_lifecycle.isCompleted) {
+        // اسپلش تمام شده | تغییرات آزادانه اعمال میشود.
+        if (mounted) {
+          setState(() => _current = updated);
+        }
+      } else {
+        // وسط اسپلش | تا پایان آن نگه داشته میشود تا رنگ و لوگو ناگهان عوض نشوند.
+        _pending = updated;
+      }
+    } catch (_) {}
+  }
+
+  void _applyPending() {
+    final AppConfig? pending = _pending;
+    _pending = null;
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      if (pending != null) {
+        _current = pending;
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _lifecycle.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _lifecycle,
+      builder: (BuildContext context, Widget? child) {
+        final double progress = _lifecycle.value;
+        final bool splashVisible = progress < 1.0;
+        final double splashOpacity = progress <= _fadeStart
+            ? 1.0
+            : (1.0 - (progress - _fadeStart) / (1.0 - _fadeStart)).clamp(0.0, 1.0);
+
+        return Stack(
+          fit: StackFit.expand,
+          children: <Widget>[
+            _current.isNative
+                ? NativeHomeScreen(config: _current)
+                : WebViewHomeScreen(config: _current),
+            if (splashVisible)
+              // تا پایان اسپلش لمسها جذب میشوند تا کاربر تصادفی روی وبویو کلک نکند.
+              IgnorePointer(
+                child: Opacity(
+                  opacity: splashOpacity,
+                  child: SplashScreen(config: _current),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 }
@@ -282,9 +587,6 @@ class _WebViewHomeScreenState extends State<WebViewHomeScreen> {
   bool _hasError = false;
   bool _hasLoadedOnce = false;
 
-  /// Universal mobile hardening injected into every page: strict viewport,
-  /// horizontal-overflow lock, hidden WP admin bar, and on-the-fly repair of
-  /// legacy http://localhost/ asset or link URLs for emulator testing.
   static const String _mobileFixesJs = r'''
 (function() {
   try {
@@ -337,8 +639,6 @@ class _WebViewHomeScreenState extends State<WebViewHomeScreen> {
       ..setNavigationDelegate(
         NavigationDelegate(
           onNavigationRequest: (NavigationRequest request) {
-            // Hand protocols the OS owns over to the system gracefully
-            // instead of letting the WebView throw on them.
             const List<String> externalSchemes = <String>[
               'tel', 'mailto', 'sms', 'whatsapp', 'intent', 'geo', 'market',
             ];
@@ -348,12 +648,6 @@ class _WebViewHomeScreenState extends State<WebViewHomeScreen> {
               return NavigationDecision.prevent;
             }
 
-            // Smart Host Bridge: while testing a local WordPress site the
-            // page keeps advertising http://localhost/ for its internal
-            // links and redirects. Inside the emulator that host means the
-            // phone itself, so rewrite it on the fly to the host-machine
-            // alias (10.0.2.2). Real public domains are never touched, so
-            // production sites route exactly as published.
             if (_isLocalSite &&
                 Platform.isAndroid &&
                 (scheme == 'http' || scheme == 'https') &&
@@ -393,12 +687,7 @@ class _WebViewHomeScreenState extends State<WebViewHomeScreen> {
             }
           },
           onWebResourceError: (WebResourceError error) {
-            // Fault tolerance: a broken image, font, stylesheet or tracking
-            // pixel must NEVER collapse the app. The offline screen appears
-            // only when the very first main-frame load fails outright.
-            if (mounted &&
-                error.isForMainFrame == true &&
-                !_hasLoadedOnce) {
+            if (mounted && error.isForMainFrame == true && !_hasLoadedOnce) {
               setState(() {
                 _hasError = true;
                 _isLoading = false;
@@ -424,9 +713,7 @@ class _WebViewHomeScreenState extends State<WebViewHomeScreen> {
   Future<void> _injectMobileFixes() async {
     try {
       await _controller.runJavaScript(_mobileFixesJs);
-    } catch (_) {
-      // DOM not ready yet | the onPageFinished pass re-runs the script.
-    }
+    } catch (_) {}
   }
 
   void _retry() {
@@ -442,9 +729,7 @@ class _WebViewHomeScreenState extends State<WebViewHomeScreen> {
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: (bool didPop, Object? result) async {
-        if (didPop) {
-          return;
-        }
+        if (didPop) return;
         if (await _controller.canGoBack()) {
           await _controller.goBack();
         } else {
@@ -459,9 +744,7 @@ class _WebViewHomeScreenState extends State<WebViewHomeScreen> {
                 value: _progress,
                 minHeight: 3,
                 backgroundColor: Colors.grey.shade200,
-                valueColor: AlwaysStoppedAnimation<Color>(
-                  widget.config.primaryColor,
-                ),
+                valueColor: AlwaysStoppedAnimation<Color>(widget.config.primaryColor),
               ),
             Expanded(
               child: Stack(
@@ -533,11 +816,7 @@ class OfflineErrorScreen extends StatelessWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
-                      Icons.wifi_off_rounded,
-                      size: 72,
-                      color: config.primaryColor,
-                    ),
+                    Icon(Icons.wifi_off_rounded, size: 72, color: config.primaryColor),
                     const SizedBox(height: 20),
                     Text(
                       'اتصال اینترنت برقرار نیست',
@@ -565,10 +844,7 @@ class OfflineErrorScreen extends StatelessWidget {
                       label: const Text('تلاش مجدد'),
                       style: FilledButton.styleFrom(
                         backgroundColor: config.primaryColor,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 28,
-                          vertical: 14,
-                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
                       ),
                     ),
                   ],

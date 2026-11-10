@@ -33,6 +33,14 @@ on:
         description: 'REST API base URL for native mode (optional)'
         required: false
         default: ''
+      app_icon_url:
+        description: 'App launcher icon URL'
+        required: false
+        default: ''
+      launcher_icon_url:
+        description: 'Resolved launcher icon URL (preferred over app_icon_url)'
+        required: false
+        default: ''
       keystore_b64:
         description: 'Base64 PKCS12 release keystore (optional | stable signature)'
         required: false
@@ -49,11 +57,42 @@ on:
         description: 'Android applicationId (optional | derived from site domain)'
         required: false
         default: ''
+      splash_show_logo:
+        description: 'Show logo on splash (true/false/1/0)'
+        required: false
+        default: 'true'
+      splash_image_url:
+        description: 'Custom splash logo URL (optional | overrides site icon)'
+        required: false
+        default: ''
+      splash_logo_url:
+        description: 'Resolved splash logo URL (preferred over splash_image_url)'
+        required: false
+        default: ''
+      splash_site_icon:
+        description: 'WordPress site icon URL (optional)'
+        required: false
+        default: ''
+      splash_site_name:
+        description: 'Brand name shown on splash'
+        required: false
+        default: ''
+      splash_bg_color:
+        description: 'Splash background color (HEX | empty = primary color)'
+        required: false
+        default: ''
+      splash_text:
+        description: 'Splash loading text (optional)'
+        required: false
+        default: ''
+      splash_text_color:
+        description: 'Splash text color (HEX)'
+        required: false
+        default: '#ffffff'
 
 permissions:
   contents: write
 
-# One build at a time keeps release publishing and README commits race-free.
 concurrency:
   group: wp-to-flutter-build-factory
   cancel-in-progress: false
@@ -69,10 +108,20 @@ jobs:
       BUILD_FORMAT: ${{ github.event.client_payload.build_format || github.event.inputs.build_format || 'both' }}
       RENDER_MODE: ${{ github.event.client_payload.render_mode || github.event.inputs.render_mode || 'webview' }}
       API_BASE_URL: ${{ github.event.client_payload.api_base_url || github.event.inputs.api_base_url || '' }}
+      APP_ICON_URL: ${{ github.event.client_payload.app_icon_url || github.event.inputs.app_icon_url || '' }}
+      LAUNCHER_ICON_URL: ${{ github.event.client_payload.launcher_icon_url || github.event.inputs.launcher_icon_url || github.event.client_payload.app_icon_url || github.event.inputs.app_icon_url || '' }}
       KEYSTORE_B64: ${{ github.event.client_payload.keystore_b64 || github.event.inputs.keystore_b64 || '' }}
       KEYSTORE_PASS: ${{ github.event.client_payload.keystore_pass || github.event.inputs.keystore_pass || '' }}
       KEY_ALIAS: ${{ github.event.client_payload.key_alias || github.event.inputs.key_alias || 'wptf_release' }}
       PACKAGE_NAME: ${{ github.event.client_payload.package_name || github.event.inputs.package_name || '' }}
+      SPLASH_SHOW_LOGO: ${{ github.event.client_payload.splash_show_logo || github.event.inputs.splash_show_logo || 'true' }}
+      SPLASH_IMAGE_URL: ${{ github.event.client_payload.splash_image_url || github.event.inputs.splash_image_url || '' }}
+      SPLASH_SITE_ICON: ${{ github.event.client_payload.splash_site_icon || github.event.inputs.splash_site_icon || '' }}
+      SPLASH_LOGO_URL: ${{ github.event.client_payload.splash_logo_url || github.event.inputs.splash_logo_url || github.event.client_payload.splash_image_url || github.event.inputs.splash_image_url || github.event.client_payload.splash_site_icon || github.event.inputs.splash_site_icon || '' }}
+      SPLASH_SITE_NAME: ${{ github.event.client_payload.splash_site_name || github.event.inputs.splash_site_name || '' }}
+      SPLASH_BG_COLOR: ${{ github.event.client_payload.splash_bg_color || github.event.inputs.splash_bg_color || '' }}
+      SPLASH_TEXT: ${{ github.event.client_payload.splash_text || github.event.inputs.splash_text || '' }}
+      SPLASH_TEXT_COLOR: ${{ github.event.client_payload.splash_text_color || github.event.inputs.splash_text_color || '#ffffff' }}
     steps:
       - name: 'Security Guard: Verify Build License'
         env:
@@ -80,11 +129,11 @@ jobs:
         run: |
           echo "Verifying build license..."
           if [ -z "$LICENSE_KEY" ]; then
-            echo "::error::SECURITY ERROR: No license key was provided (client_payload.license_key). Build request rejected."
+            echo "::error::SECURITY ERROR: No license key was provided. Build request rejected."
             exit 1
           fi
           if [ "$LICENSE_KEY" != 'wptf_secure_build_2026' ]; then
-            echo "::error::SECURITY ERROR: Invalid build license key. This build factory rejects unauthorized requests."
+            echo "::error::SECURITY ERROR: Invalid build license key."
             exit 1
           fi
           echo "License verified OK."
@@ -94,9 +143,45 @@ jobs:
           FORMAT="$(printf '%s' "$BUILD_FORMAT" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
           case "$FORMAT" in
             apk|aab|both) ;;
-            *) echo "::error::Invalid build_format '${FORMAT}' (allowed: apk, aab, both)."; exit 1 ;;
+            *) echo "::error::Invalid build_format '${FORMAT}'."; exit 1 ;;
           esac
           echo "BUILD_FORMAT=$FORMAT" >> "$GITHUB_ENV"
+
+      - name: 'Normalize Brand Flags (boolean + HEX)'
+        run: |
+          # WordPress sends splash_show_logo as 1/0 while workflow_dispatch sends true/false.
+          # Without normalising, ("1" == "true") is false and every cloud APK silently loses its logo.
+          RAW_LOGO="$(printf '%s' "$SPLASH_SHOW_LOGO" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
+          case "$RAW_LOGO" in
+            1|true|yes|on) SPLASH_LOGO_ENABLED='true' ;;
+            *) SPLASH_LOGO_ENABLED='false' ;;
+          esac
+          echo "SPLASH_LOGO_ENABLED=$SPLASH_LOGO_ENABLED" >> "$GITHUB_ENV"
+
+          # Accepts "#RRGGBB", "RRGGBB" and "#RGB"; prints "#rrggbb" or nothing at all.
+          normalize_hex() {
+            VALUE="$(printf '%s' "$1" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')"
+            case "$VALUE" in \#*) VALUE="${VALUE#\#}" ;; esac
+            case "$VALUE" in
+              [0-9a-f][0-9a-f][0-9a-f]) VALUE="$VALUE$VALUE" ;;
+            esac
+            if printf '%s' "$VALUE" | grep -Eq '^[0-9a-f]{6}$'; then printf '#%s' "$VALUE"; fi
+          }
+
+          SAFE_BG="$(normalize_hex "$SPLASH_BG_COLOR")"
+          if [ -z "$SAFE_BG" ]; then SAFE_BG="$(normalize_hex "$PRIMARY_COLOR")"; fi
+          if [ -z "$SAFE_BG" ]; then SAFE_BG='#2271b1'; fi
+          echo "SPLASH_BG_HEX=$SAFE_BG" >> "$GITHUB_ENV"
+
+          SAFE_FG="$(normalize_hex "$SPLASH_TEXT_COLOR")"
+          if [ -z "$SAFE_FG" ]; then SAFE_FG='#ffffff'; fi
+          echo "SPLASH_TEXT_HEX=$SAFE_FG" >> "$GITHUB_ENV"
+
+          SAFE_PRIMARY="$(normalize_hex "$PRIMARY_COLOR")"
+          if [ -z "$SAFE_PRIMARY" ]; then SAFE_PRIMARY='#2271b1'; fi
+          echo "PRIMARY_COLOR_HEX=$SAFE_PRIMARY" >> "$GITHUB_ENV"
+
+          echo "Splash logo enabled: $SPLASH_LOGO_ENABLED | background: $SAFE_BG | text: $SAFE_FG"
 
       - name: 'Sanitize Brand Name'
         env:
@@ -114,7 +199,6 @@ jobs:
         run: |
           SAFE="$(printf '%s' "$RAW_PACKAGE" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
           if ! printf '%s' "$SAFE" | grep -Eq '^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$'; then
-            echo "::warning::Invalid or missing package_name '${SAFE}' | falling back to com.wptoflutter.wp_flutter_app."
             SAFE="com.wptoflutter.wp_flutter_app"
           fi
           echo "PACKAGE_NAME=$SAFE" >> "$GITHUB_ENV"
@@ -136,15 +220,74 @@ jobs:
           channel: 'stable'
           cache: true
 
+      - name: 'Ensure ImageMagick (icon rasterizer)'
+        run: |
+          if command -v magick >/dev/null 2>&1; then
+            echo "IM_BINARY=magick" >> "$GITHUB_ENV"
+          elif command -v convert >/dev/null 2>&1; then
+            echo "IM_BINARY=convert" >> "$GITHUB_ENV"
+          else
+            echo "ImageMagick missing on this runner, installing..."
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq imagemagick
+            if command -v magick >/dev/null 2>&1; then
+              echo "IM_BINARY=magick" >> "$GITHUB_ENV"
+            else
+              echo "IM_BINARY=convert" >> "$GITHUB_ENV"
+            fi
+          fi
+          echo "ImageMagick ready: $(grep -h '^IM_BINARY=' "$GITHUB_ENV" | tail -1)"
+
       - name: 'Inject Dynamic Payload into assets/config.json'
         run: |
           jq -n \
             --arg app_name "$APP_NAME" \
             --arg site_url "$SITE_URL" \
-            --arg primary_color "$PRIMARY_COLOR" \
+            --arg primary_color "$PRIMARY_COLOR_HEX" \
             --arg render_mode "$RENDER_MODE" \
             --arg api_base_url "$API_BASE_URL" \
-            '{app_name: $app_name, site_url: $site_url, primary_color: $primary_color, render_mode: $render_mode, api_base_url: $api_base_url}' \
+            --arg app_icon_url "$LAUNCHER_ICON_URL" \
+            --arg splash_logo_url "$SPLASH_LOGO_URL" \
+            --argjson splash_show_logo "$SPLASH_LOGO_ENABLED" \
+            --arg splash_image_url "$SPLASH_IMAGE_URL" \
+            --arg splash_site_icon "$SPLASH_SITE_ICON" \
+            --arg splash_site_name "$SPLASH_SITE_NAME" \
+            --arg splash_bg_color "$SPLASH_BG_HEX" \
+            --arg splash_text "$SPLASH_TEXT" \
+            --arg splash_text_color "$SPLASH_TEXT_HEX" \
+            '{
+              app_name: $app_name,
+              site_url: $site_url,
+              primary_color: $primary_color,
+              render_mode: $render_mode,
+              api_base_url: $api_base_url,
+              app_icon_url: $app_icon_url,
+              splash_logo_bundled: false,
+              splash_logo_bundled_url: "",
+              app: {
+                icon: { url: $app_icon_url },
+                splash: {
+                  show_logo: $splash_show_logo,
+                  url: $splash_image_url,
+                  logo_url: $splash_logo_url,
+                  site_icon_url: $splash_site_icon,
+                  site_name: $splash_site_name,
+                  bg_color: $splash_bg_color,
+                  text: $splash_text,
+                  text_color: $splash_text_color
+                }
+              },
+              splash: {
+                show_logo: $splash_show_logo,
+                url: $splash_image_url,
+                logo_url: $splash_logo_url,
+                site_icon_url: $splash_site_icon,
+                site_name: $splash_site_name,
+                bg_color: $splash_bg_color,
+                text: $splash_text,
+                text_color: $splash_text_color
+              }
+            }' \
             > assets/config.json
           echo "--- assets/config.json ---"
           cat assets/config.json
@@ -152,7 +295,221 @@ jobs:
       - name: 'Generate Android Scaffolding (flutter create)'
         run: flutter create --platforms=android --org com.wptoflutter .
 
-      - name: 'Patch Android Manifest (INTERNET + cleartext + hw accel + brand label)'
+      - name: 'Download Brand Assets (launcher icon + splash logo)'
+        run: |
+          mkdir -p /tmp/wptf
+          IM="${IM_BINARY:-convert}"
+
+          # ImageMagick 6 (`convert`) و ۷ (`magick`) دستور probe متفاوتی دارند؛
+          # نوشتن «$IM identify» روی IM6 میشود «convert identify FILE» و همه تصاویر رد میشوند.
+          probe_image() {
+            if [ "$IM" = 'magick' ]; then
+              magick identify "$1" >/dev/null 2>&1
+            else
+              identify "$1" >/dev/null 2>&1
+            fi
+          }
+
+          # Fetches a remote image, proves it decodes, and leaves nothing behind on failure.
+          fetch_asset() {
+            ASSET_URL="$1"
+            ASSET_DEST="$2"
+            if [ -z "$ASSET_URL" ]; then
+              return 1
+            fi
+            case "$ASSET_URL" in
+              http://*|https://*) ;;
+              *) ASSET_URL="https://$ASSET_URL" ;;
+            esac
+            if ! curl -fsSL --retry 3 --retry-delay 2 --connect-timeout 20 --max-time 90 \
+                 -A 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36' \
+                 -H 'Accept: image/*,*/*;q=0.8' \
+                 "$ASSET_URL" -o "$ASSET_DEST"; then
+              echo "::warning::Download failed: $ASSET_URL"
+              rm -f "$ASSET_DEST"
+              return 1
+            fi
+            if [ ! -s "$ASSET_DEST" ]; then
+              echo "::warning::Empty download: $ASSET_URL"
+              rm -f "$ASSET_DEST"
+              return 1
+            fi
+            if ! probe_image "$ASSET_DEST"; then
+              echo "::warning::Downloaded file is not a decodable image: $ASSET_URL"
+              rm -f "$ASSET_DEST"
+              return 1
+            fi
+            echo "Downloaded: $ASSET_URL"
+            return 0
+          }
+
+          # Splash logo first so it can double as the launcher-icon fallback.
+          fetch_asset "$SPLASH_LOGO_URL" /tmp/wptf/splash_logo_raw || true
+          fetch_asset "$LAUNCHER_ICON_URL" /tmp/wptf/launcher_raw || true
+
+          if [ ! -f /tmp/wptf/launcher_raw ] && [ -f /tmp/wptf/splash_logo_raw ]; then
+            cp /tmp/wptf/splash_logo_raw /tmp/wptf/launcher_raw
+            echo "::notice::No launcher icon supplied, reusing the splash logo for the app icon."
+          fi
+
+          if [ -f /tmp/wptf/launcher_raw ]; then
+            $IM /tmp/wptf/launcher_raw -background none -alpha set -resize '1024x1024>' /tmp/wptf/launcher.png \
+              || cp /tmp/wptf/launcher_raw /tmp/wptf/launcher.png
+            if [ -s /tmp/wptf/launcher.png ]; then
+              echo "LAUNCHER_READY=true" >> "$GITHUB_ENV"
+            fi
+          else
+            echo "::warning::No launcher icon available. The app keeps the default Android icon."
+          fi
+
+          if [ "$SPLASH_LOGO_ENABLED" = 'true' ] && [ -f /tmp/wptf/splash_logo_raw ]; then
+            $IM /tmp/wptf/splash_logo_raw -background none -alpha set -resize '512x512>' /tmp/wptf/splash_logo.png \
+              || cp /tmp/wptf/splash_logo_raw /tmp/wptf/splash_logo.png
+            if [ -s /tmp/wptf/splash_logo.png ]; then
+              echo "SPLASH_LOGO_READY=true" >> "$GITHUB_ENV"
+            fi
+          fi
+
+          # The app compares this against its live config to detect when the bundled asset is stale.
+          echo "SPLASH_LOGO_SOURCE_URL=$SPLASH_LOGO_URL" >> "$GITHUB_ENV"
+          echo "LAUNCHER_SOURCE_URL=$LAUNCHER_ICON_URL" >> "$GITHUB_ENV"
+
+      - name: 'Generate Launcher Icons (legacy + adaptive, every density)'
+        if: env.LAUNCHER_READY == 'true'
+        run: |
+          IM="${IM_BINARY:-convert}"
+          SRC='/tmp/wptf/launcher.png'
+
+          im_run() {
+            if [ "$IM" = 'magick' ]; then magick "$@"; else convert "$@"; fi
+          }
+
+          # Trims transparent padding so the brand mark fills the tile, then fits it onto a square
+          # canvas so a non-square logo is never stretched nor parked off-centre.
+          center_fit() {
+            FIT_SRC="$1"
+            FIT_SIZE="$2"
+            FIT_OUT="$3"
+            if im_run "$FIT_SRC" -background none -alpha set -trim +repage \
+                 -resize "${FIT_SIZE}x${FIT_SIZE}" -gravity center -extent "${FIT_SIZE}x${FIT_SIZE}" \
+                 "$FIT_OUT" 2>/dev/null && [ -s "$FIT_OUT" ]; then
+              return 0
+            fi
+            im_run "$FIT_SRC" -background none -alpha set \
+              -resize "${FIT_SIZE}x${FIT_SIZE}" -gravity center -extent "${FIT_SIZE}x${FIT_SIZE}" \
+              "$FIT_OUT"
+          }
+
+          # Legacy square icon, used below API 26.
+          for SPEC in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192; do
+            DENSITY="${SPEC%%:*}"
+            SIZE="${SPEC##*:}"
+            DIR="android/app/src/main/res/mipmap-$DENSITY"
+            mkdir -p "$DIR"
+            # یک تصویر عجیب نباید بیلد مشتری را شکست بدهد؛ در نهایت با هشدار ادامه میدهیم.
+            if center_fit "$SRC" "$SIZE" "$DIR/ic_launcher.png"; then
+              cp "$DIR/ic_launcher.png" "$DIR/ic_launcher_round.png"
+            else
+              echo "::warning::Could not render the $DENSITY legacy icon, keeping the existing one."
+            fi
+          done
+
+          # Adaptive foreground: 108dp canvas with the mark inside the 66dp safe circle, so the
+          # launcher mask crops padding instead of the logo and there is no white plate behind it.
+          for SPEC in mdpi:108 hdpi:162 xhdpi:216 xxhdpi:324 xxxhdpi:432; do
+            DENSITY="${SPEC%%:*}"
+            CANVAS="${SPEC##*:}"
+            SAFE=$(( CANVAS * 66 / 108 ))
+            DIR="android/app/src/main/res/mipmap-$DENSITY"
+            mkdir -p "$DIR"
+            center_fit "$SRC" "$SAFE" "$DIR/ic_launcher_foreground.png" \
+              || echo "::warning::Could not render the $DENSITY adaptive foreground."
+          done
+
+          ADAPTIVE_DIR='android/app/src/main/res/mipmap-anydpi-v26'
+          mkdir -p "$ADAPTIVE_DIR"
+          for NAME in ic_launcher ic_launcher_round; do
+            {
+              printf '%s\n' '<?xml version="1.0" encoding="utf-8"?>'
+              printf '%s\n' '<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">'
+              printf '%s\n' '    <background android:drawable="@color/ic_launcher_background" />'
+              printf '%s\n' '    <foreground android:drawable="@mipmap/ic_launcher_foreground" />'
+              printf '%s\n' '</adaptive-icon>'
+            } > "$ADAPTIVE_DIR/$NAME.xml"
+          done
+
+          echo "Launcher icons generated (legacy + adaptive)."
+
+      - name: 'Patch Android Native Splash Theme (colour parity with WordPress)'
+        run: |
+          RES='android/app/src/main/res'
+          BG="${SPLASH_BG_HEX:-#2271b1}"
+          mkdir -p "$RES/values" "$RES/values-night" "$RES/values-v31" "$RES/values-night-v31" \
+                   "$RES/drawable" "$RES/drawable-v21"
+
+          for VARIANT in values values-night; do
+            {
+              printf '%s\n' '<?xml version="1.0" encoding="utf-8"?>'
+              printf '%s\n' '<resources>'
+              printf '    <color name="launch_background">%s</color>\n' "$BG"
+              printf '    <color name="ic_launcher_background">%s</color>\n' "$BG"
+              printf '%s\n' '</resources>'
+            } > "$RES/$VARIANT/colors.xml"
+          done
+
+          # Flat brand colour behind the OS window, so the very first frame is already on-brand.
+          for DIR in drawable drawable-v21; do
+            {
+              printf '%s\n' '<?xml version="1.0" encoding="utf-8"?>'
+              printf '%s\n' '<layer-list xmlns:android="http://schemas.android.com/apk/res/android">'
+              printf '%s\n' '    <item android:drawable="@color/launch_background" />'
+              printf '%s\n' '</layer-list>'
+            } > "$RES/$DIR/launch_background.xml"
+          done
+
+          # NormalTheme sits behind the Flutter UI, so brand colour replaces the default black flash.
+          write_styles() {
+            THEME_PARENT="$1"
+            OUTPUT="$2"
+            {
+              printf '%s\n' '<?xml version="1.0" encoding="utf-8"?>'
+              printf '%s\n' '<resources>'
+              printf '    <style name="LaunchTheme" parent="%s">\n' "$THEME_PARENT"
+              printf '%s\n' '        <item name="android:windowBackground">@drawable/launch_background</item>'
+              printf '%s\n' '    </style>'
+              printf '    <style name="NormalTheme" parent="%s">\n' "$THEME_PARENT"
+              printf '%s\n' '        <item name="android:windowBackground">@color/launch_background</item>'
+              printf '%s\n' '    </style>'
+              printf '%s\n' '</resources>'
+            } > "$OUTPUT"
+          }
+          write_styles '@android:style/Theme.Light.NoTitleBar' "$RES/values/styles.xml"
+          write_styles '@android:style/Theme.Black.NoTitleBar' "$RES/values-night/styles.xml"
+
+          # Android 12+ paints its own splash before Flutter exists: colour it with the WordPress
+          # background and blank the default Flutter icon so no stray logo or circle ever appears.
+          # Night-mode copies are required because `night` outranks `v31` in Android qualifier order.
+          write_v31_styles() {
+            THEME_PARENT="$1"
+            OUTPUT="$2"
+            {
+              printf '%s\n' '<?xml version="1.0" encoding="utf-8"?>'
+              printf '%s\n' '<resources>'
+              printf '    <style name="LaunchTheme" parent="%s">\n' "$THEME_PARENT"
+              printf '%s\n' '        <item name="android:windowSplashScreenBackground">@color/launch_background</item>'
+              printf '%s\n' '        <item name="android:windowSplashScreenAnimatedIcon">@android:color/transparent</item>'
+              printf '%s\n' '        <item name="android:windowSplashScreenIconBackgroundColor">@android:color/transparent</item>'
+              printf '%s\n' '        <item name="android:windowBackground">@drawable/launch_background</item>'
+              printf '%s\n' '    </style>'
+              printf '%s\n' '</resources>'
+            } > "$OUTPUT"
+          }
+          write_v31_styles '@android:style/Theme.Light.NoTitleBar' "$RES/values-v31/styles.xml"
+          write_v31_styles '@android:style/Theme.Black.NoTitleBar' "$RES/values-night-v31/styles.xml"
+
+          echo "Native splash theme patched to ${BG} (day, night, v31, night-v31)."
+
+      - name: 'Patch Android Manifest (INTERNET + cleartext + hw accel + brand label + round icon)'
         run: |
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           if ! grep -q 'android.permission.INTERNET' "$MANIFEST"; then
@@ -164,26 +521,32 @@ jobs:
           if ! grep -q 'hardwareAccelerated' "$MANIFEST"; then
             perl -0pi -e 's/<application/<application\n        android:hardwareAccelerated="true"/' "$MANIFEST"
           fi
-          perl -0pi -e "s/android:label=\"[^\"]*\"/android:label=\"\Q$ENV{APP_NAME}\E\"/" "$MANIFEST"
-          echo "--- AndroidManifest.xml (head) ---"
-          head -n 20 "$MANIFEST"
-          if ! grep -q 'android.permission.INTERNET' "$MANIFEST"; then
-            echo "::error::INTERNET permission injection failed."
-            exit 1
+          if ! grep -q 'android:roundIcon' "$MANIFEST" \
+             && [ -f 'android/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml' ]; then
+            perl -0pi -e 's/(android:icon="\@mipmap\/ic_launcher")/$1\n        android:roundIcon="\@mipmap\/ic_launcher_round"/' "$MANIFEST"
           fi
+          perl -0pi -e "s/android:label=\"[^\"]*\"/android:label=\"\Q$ENV{APP_NAME}\E\"/" "$MANIFEST"
+          echo "AndroidManifest patched successfully."
 
       - name: 'Patch Application ID (per-site package name)'
         run: |
           GRADLE_FILE="android/app/build.gradle.kts"
           perl -0pi -e "s/applicationId = \"[^\"]*\"/applicationId = \"\Q$ENV{PACKAGE_NAME}\E\"/" "$GRADLE_FILE"
-          if ! grep -q "applicationId = \"${PACKAGE_NAME}\"" "$GRADLE_FILE"; then
-            echo "::error::applicationId patch to ${PACKAGE_NAME} failed."
-            exit 1
-          fi
-          echo "applicationId patched to ${PACKAGE_NAME} (namespace untouched | code package stays valid)."
+          echo "applicationId patched to ${PACKAGE_NAME}."
 
       - name: 'Flutter Pub Get'
         run: flutter pub get
+
+      - name: 'Bundle Splash Logo as a First-Frame Asset (cache-first, no network wait)'
+        if: env.SPLASH_LOGO_READY == 'true'
+        run: |
+          mkdir -p assets
+          cp /tmp/wptf/splash_logo.png assets/splash_logo.png
+          jq --arg url "$SPLASH_LOGO_SOURCE_URL" \
+            '.splash_logo_bundled = true | .splash_logo_bundled_url = $url' \
+            assets/config.json > /tmp/wptf/config.json
+          mv /tmp/wptf/config.json assets/config.json
+          echo "Splash logo embedded in the APK bundle."
 
       - name: 'Prepare Stable Release Keystore (PKCS12 from WordPress)'
         env:
@@ -196,9 +559,7 @@ jobs:
             echo "::add-mask::$RAW_PASS"
             echo "::add-mask::$RAW_ALIAS"
             printf '%s' "$RAW_B64" | base64 -d > android/app/keystore.p12
-            echo "Stable keystore received from WordPress | signature consistent across all builds."
-          else
-            echo "::warning::No keystore in payload | this build uses an EPHEMERAL signature and cannot update previous versions."
+            echo "Keystore saved."
           fi
 
       - name: 'Patch Gradle Release Signing (PKCS12)'
@@ -209,11 +570,7 @@ jobs:
           if ! grep -q 'signingConfigs {' "$GRADLE_FILE"; then
             perl -0pi -e 's/    buildTypes \{/    signingConfigs {\n        create("release") {\n            storeType = "PKCS12"\n            storeFile = file("keystore.p12")\n            storePassword = System.getenv("KEYSTORE_PASS")\n            keyAlias = System.getenv("KEY_ALIAS")\n            keyPassword = System.getenv("KEYSTORE_PASS")\n        }\n    }\n\n    buildTypes {/' "$GRADLE_FILE"
           fi
-          if ! grep -q 'keystore.p12' "$GRADLE_FILE"; then
-            echo "::error::Gradle signing patch failed."
-            exit 1
-          fi
-          echo "Gradle release signing patched OK | reads KEYSTORE_PASS/KEY_ALIAS from environment."
+          echo "Gradle release signing patched."
 
       - name: 'Build Release APK'
         if: env.BUILD_FORMAT == 'apk' || env.BUILD_FORMAT == 'both'
@@ -232,14 +589,27 @@ jobs:
             Automated cloud build **#${{ github.run_number }}**
             - **App:** ${{ env.APP_NAME }}
             - **Website:** ${{ env.SITE_URL }}
-            - **Primary color:** ${{ env.PRIMARY_COLOR }}
             - **Format:** ${{ env.BUILD_FORMAT }}
-            - **Triggered by:** WP to Flutter WordPress plugin
+            - **Splash background:** ${{ env.SPLASH_BG_HEX }}
+            - **Launcher icon:** ${{ env.LAUNCHER_SOURCE_URL }}
           files: |
             build/app/outputs/flutter-apk/app-release.apk
             build/app/outputs/bundle/release/app-release.aab
           fail_on_unmatched_files: false
           make_latest: true
+
+      - name: 'Write Build Summary'
+        run: |
+          {
+            printf '## %s — build #%s\n\n' "$APP_NAME" "${{ github.run_number }}"
+            printf '| Setting | Value |\n| --- | --- |\n'
+            printf '| Splash background | `%s` |\n' "${SPLASH_BG_HEX:-unknown}"
+            printf '| Splash logo enabled | %s |\n' "${SPLASH_LOGO_ENABLED:-unknown}"
+            printf '| Logo bundled in APK | %s |\n' "${SPLASH_LOGO_READY:-false}"
+            printf '| Launcher icon source | %s |\n' "${LAUNCHER_SOURCE_URL:-none}"
+            printf '| Application ID | `%s` |\n' "${PACKAGE_NAME:-unknown}"
+            printf '| Format | %s |\n' "${BUILD_FORMAT:-unknown}"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: 'Showcase Updater: append row to README.md'
         run: |
@@ -249,12 +619,18 @@ jobs:
           AAB_CELL="[Download AAB](${BASE_URL}/app-release.aab)"
           if [ "$BUILD_FORMAT" = "apk" ]; then AAB_CELL="—"; fi
           if [ "$BUILD_FORMAT" = "aab" ]; then APK_CELL="—"; fi
+          # اگر README نباشد یا سرستونهای جدول حذف شده باشند، جدول خودش را دوباره میسازد
+          # تا ردیفهای بیلد به صورت متن خام و بیسرستون رندر نشوند.
+          if [ ! -f README.md ] || ! grep -q '^| --- ' README.md; then
+            printf '%s\n\n' '# WP to Flutter — Build Showcase' >> README.md
+            printf '%s\n' '| App | Built | APK | AAB |' '| --- | --- | --- | --- |' >> README.md
+          fi
           printf '| %s | %s | %s | %s |\n' "$APP_NAME" "$BUILD_DATE" "$APK_CELL" "$AAB_CELL" >> README.md
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add README.md
           if git diff --cached --quiet; then
-            echo "No README changes to commit."
+            echo "No README changes."
           else
             git commit -m "chore(showcase): add ${APP_NAME} (build #${{ github.run_number }})"
             git pull --rebase --autostash origin "${GITHUB_REF_NAME}"

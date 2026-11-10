@@ -1,0 +1,5 @@
+# فایلهای اجرایی باید LF بمانند: رانر گیتهاب آنها را با bash اجرا میکند و
+# یک \r اضافه باعث میشود هر استپ با "$'\r': command not found" شکست بخورد.
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.sh   text eol=lf
