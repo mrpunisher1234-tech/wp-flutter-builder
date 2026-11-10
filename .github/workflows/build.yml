@@ -89,6 +89,10 @@ on:
         description: 'Splash text color (HEX)'
         required: false
         default: '#ffffff'
+      search_suggestions:
+        description: 'Popular search terms as a JSON array, e.g. ["a","b"]'
+        required: false
+        default: '[]'
 
 permissions:
   contents: write
@@ -122,6 +126,7 @@ jobs:
       SPLASH_BG_COLOR: ${{ github.event.client_payload.splash_bg_color || github.event.inputs.splash_bg_color || '' }}
       SPLASH_TEXT: ${{ github.event.client_payload.splash_text || github.event.inputs.splash_text || '' }}
       SPLASH_TEXT_COLOR: ${{ github.event.client_payload.splash_text_color || github.event.inputs.splash_text_color || '#ffffff' }}
+      SEARCH_SUGGESTIONS: ${{ github.event.client_payload.search_suggestions || github.event.inputs.search_suggestions || '[]' }}
     steps:
       - name: 'Security Guard: Verify Build License'
         env:
@@ -182,6 +187,16 @@ jobs:
           echo "PRIMARY_COLOR_HEX=$SAFE_PRIMARY" >> "$GITHUB_ENV"
 
           echo "Splash logo enabled: $SPLASH_LOGO_ENABLED | background: $SAFE_BG | text: $SAFE_FG"
+
+          # عبارتهای پرطرفدار جستجو | باید آرایهٔ JSON معتبر باشد وگرنه --argjson
+          # کل استپ ساخت config.json را شکست میدهد.
+          SUGGESTIONS_JSON="${SEARCH_SUGGESTIONS:-[]}"
+          if ! printf '%s' "$SUGGESTIONS_JSON" | jq -e 'type == "array"' >/dev/null 2>&1; then
+            echo "::warning::search_suggestions was not a JSON array, ignoring it."
+            SUGGESTIONS_JSON='[]'
+          fi
+          echo "SEARCH_SUGGESTIONS_JSON=$SUGGESTIONS_JSON" >> "$GITHUB_ENV"
+          echo "Search suggestions: $SUGGESTIONS_JSON"
 
       - name: 'Sanitize Brand Name'
         env:
@@ -255,6 +270,7 @@ jobs:
             --arg splash_bg_color "$SPLASH_BG_HEX" \
             --arg splash_text "$SPLASH_TEXT" \
             --arg splash_text_color "$SPLASH_TEXT_HEX" \
+            --argjson search_suggestions "$SEARCH_SUGGESTIONS_JSON" \
             '{
               app_name: $app_name,
               site_url: $site_url,
@@ -262,6 +278,7 @@ jobs:
               render_mode: $render_mode,
               api_base_url: $api_base_url,
               app_icon_url: $app_icon_url,
+              search_suggestions: $search_suggestions,
               splash_logo_bundled: false,
               splash_logo_bundled_url: "",
               app: {

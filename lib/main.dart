@@ -4,7 +4,6 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
@@ -170,7 +169,20 @@ class AppConfig {
       apiBaseUrl: rawApiBase.isEmpty ? '' : normalizeSiteUrl(rawApiBase),
       appIconUrl: resolvedAppIcon,
       renderMode: (map['render_mode'] as String?) == 'native' ? 'native' : 'webview',
+      // همان چهار عبارت پرطرفدار که بیلد ابری داخل APK میپزد؛ از این پس
+      // صفحه جستجو حتی بدون شبکه و در اولین فریم هم آنها را دارد.
+      searchSuggestions: parseSuggestions(map['search_suggestions']),
     );
+  }
+
+  /// چهار عبارت پرطرفدار | خالیها حذف و بیشتر از چهار مورد پذیرفته نمیشود.
+  /// مقدار غیرلیست (رشته یا null) هم بیصدا نادیده گرفته میشود.
+  static List<String> parseSuggestions(dynamic raw) {
+    return (raw is List ? raw : const <dynamic>[])
+        .map((dynamic term) => ((term as String?) ?? '').trim())
+        .where((String term) => term.isNotEmpty)
+        .take(4)
+        .toList(growable: false);
   }
 
   static String _readName(dynamic value) {
@@ -361,11 +373,10 @@ class AppConfig {
         ),
         headerLogoName:
             (((decoded['header_logo'] as Map?)?['name'] as String?) ?? '').trim(),
-        searchSuggestions: ((decoded['search_suggestions'] as List?) ?? const <dynamic>[])
-            .map((dynamic term) => ((term as String?) ?? '').trim())
-            .where((String term) => term.isNotEmpty)
-            .take(4)
-            .toList(growable: false),
+        // اگر پاسخ سرور کلید را نداشت، مقدار پخته‌شده در APK حفظ می‌شود.
+        searchSuggestions: decoded.containsKey('search_suggestions')
+            ? AppConfig.parseSuggestions(decoded['search_suggestions'])
+            : searchSuggestions,
         reviewsRequireLogin: decoded['reviews_require_login'] == true,
         reviewsGuestPost: decoded['reviews_guest_post'] != false,
         sliderInterval:
@@ -471,31 +482,82 @@ class _SplashGate extends StatefulWidget {
 
 class _SplashGateState extends State<_SplashGate>
     with SingleTickerProviderStateMixin {
-  /// طول عمر اسپلش | دقیقاً ۲ ثانیه، مستقل از شبکه یا پاسخ سرور.
-  static const Duration _splashLifetime = Duration(milliseconds: 2000);
+  /// حداقل زمان نمایش اسپلش | تا انیمیشن برند و لوگو دیده شود.
+  static const Duration _minimumSplash = Duration(milliseconds: 2000);
 
-  /// سهم انتهایی از ۲ ثانیه که صرف محو شدن میشود (۱.۷۵ ثانیه نمایش کامل، ۰.۲۵ ثانیه محو).
-  static const double _fadeStart = 0.875;
+  /// سقف انتظار برای آماده شدن محتوا | اگر سایت دیر جواب داد، اسپلش بیشتر از این نمیماند.
+  static const Duration _maximumSplash = Duration(milliseconds: 7000);
 
-  late final AnimationController _lifecycle;
+  /// محو شدن پایانی | پس از آن اسپلش کاملاً برداشته میشود.
+  static const Duration _fadeOut = Duration(milliseconds: 250);
+
+  late final AnimationController _fade;
+  Timer? _minimumTimer;
+  Timer? _ceilingTimer;
   late AppConfig _current;
   AppConfig? _pending;
+  bool _minimumElapsed = false;
+  bool _contentReady = false;
+  bool _dismissing = false;
+  bool _splashGone = false;
 
   @override
   void initState() {
     super.initState();
     _current = widget.config;
 
-    _lifecycle = AnimationController(vsync: this, duration: _splashLifetime)
+    // نسخه نیتیو سیگنال «آماده شد» ندارد و محتوایش از ابتدا هست، پس فقط حداقل زمان.
+    _contentReady = _current.isNative;
+
+    _fade = AnimationController(vsync: this, duration: _fadeOut, value: 1.0)
       ..addStatusListener((AnimationStatus status) {
-        if (status == AnimationStatus.completed) {
-          _applyPending();
+        if (status != AnimationStatus.dismissed || !mounted) {
+          return;
         }
-      })
-      ..forward();
+        // اسپلش کاملاً کنار رفت | حالا تنظیمات تازه آزادانه اعمال میشوند.
+        setState(() {
+          _splashGone = true;
+          final AppConfig? pending = _pending;
+          _pending = null;
+          if (pending != null) {
+            _current = pending;
+          }
+        });
+      });
+
+    _minimumTimer = Timer(_minimumSplash, () {
+      _minimumElapsed = true;
+      _maybeDismiss();
+    });
+
+    _ceilingTimer = Timer(_maximumSplash, () {
+      _contentReady = true;
+      _maybeDismiss();
+    });
 
     // دریافت تنظیمات در پسزمینه (هم وبویو و هم نیتیو) کاملاً غیرمسدودکننده.
     _syncRemoteSettings();
+  }
+
+  /// وبویو خبر میدهد که صفحه آماده است (onPageFinished یا خطای صفحه اصلی).
+  void _onContentReady() {
+    if (_contentReady) {
+      return;
+    }
+    _contentReady = true;
+    _maybeDismiss();
+  }
+
+  /// اسپلش فقط وقتی کنار میرود که هم حداقل زمان گذشته باشد و هم محتوا آماده باشد.
+  void _maybeDismiss() {
+    if (!mounted || _dismissing || _splashGone) {
+      return;
+    }
+    if (!_minimumElapsed || !_contentReady) {
+      return;
+    }
+    _dismissing = true;
+    _fade.reverse();
   }
 
   Future<void> _syncRemoteSettings() async {
@@ -507,7 +569,7 @@ class _SplashGateState extends State<_SplashGate>
         return;
       }
       updated.cacheSplash();
-      if (_lifecycle.isCompleted) {
+      if (_splashGone) {
         // اسپلش تمام شده | تغییرات آزادانه اعمال میشود.
         if (mounted) {
           setState(() => _current = updated);
@@ -519,47 +581,30 @@ class _SplashGateState extends State<_SplashGate>
     } catch (_) {}
   }
 
-  void _applyPending() {
-    final AppConfig? pending = _pending;
-    _pending = null;
-    if (!mounted) {
-      return;
-    }
-    setState(() {
-      if (pending != null) {
-        _current = pending;
-      }
-    });
-  }
-
   @override
   void dispose() {
-    _lifecycle.dispose();
+    _minimumTimer?.cancel();
+    _ceilingTimer?.cancel();
+    _fade.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: _lifecycle,
+      animation: _fade,
       builder: (BuildContext context, Widget? child) {
-        final double progress = _lifecycle.value;
-        final bool splashVisible = progress < 1.0;
-        final double splashOpacity = progress <= _fadeStart
-            ? 1.0
-            : (1.0 - (progress - _fadeStart) / (1.0 - _fadeStart)).clamp(0.0, 1.0);
-
         return Stack(
           fit: StackFit.expand,
           children: <Widget>[
             _current.isNative
                 ? NativeHomeScreen(config: _current)
-                : WebViewHomeScreen(config: _current),
-            if (splashVisible)
+                : WebViewHomeScreen(config: _current, onReady: _onContentReady),
+            if (!_splashGone)
               // تا پایان اسپلش لمسها جذب میشوند تا کاربر تصادفی روی وبویو کلک نکند.
               IgnorePointer(
                 child: Opacity(
-                  opacity: splashOpacity,
+                  opacity: _fade.value,
                   child: SplashScreen(config: _current),
                 ),
               ),
@@ -571,9 +616,12 @@ class _SplashGateState extends State<_SplashGate>
 }
 
 class WebViewHomeScreen extends StatefulWidget {
-  const WebViewHomeScreen({super.key, required this.config});
+  const WebViewHomeScreen({super.key, required this.config, this.onReady});
 
   final AppConfig config;
+
+  /// وقتی اولین صفحه آماده شد صدا زده میشود تا اسپلش برداشته شود.
+  final VoidCallback? onReady;
 
   @override
   State<WebViewHomeScreen> createState() => _WebViewHomeScreenState();
@@ -583,9 +631,18 @@ class _WebViewHomeScreenState extends State<WebViewHomeScreen> {
   late final WebViewController _controller;
   late final bool _isLocalSite;
   double _progress = 0;
-  bool _isLoading = true;
   bool _hasError = false;
   bool _hasLoadedOnce = false;
+  bool _readyReported = false;
+
+  /// خبر دادن آمادهشدن | فقط یکبار، تا اسپلش دیرتر از موعد برداشته نشود.
+  void _reportReady() {
+    if (_readyReported) {
+      return;
+    }
+    _readyReported = true;
+    widget.onReady?.call();
+  }
 
   static const String _mobileFixesJs = r'''
 (function() {
@@ -665,21 +722,17 @@ class _WebViewHomeScreenState extends State<WebViewHomeScreen> {
           },
           onPageStarted: (String url) {
             if (mounted) {
-              setState(() {
-                _isLoading = !_hasLoadedOnce;
-                _hasError = false;
-              });
+              setState(() => _hasError = false);
             }
             _injectMobileFixes();
           },
           onPageFinished: (String url) {
             _injectMobileFixes();
             if (mounted) {
-              setState(() {
-                _hasLoadedOnce = true;
-                _isLoading = false;
-              });
+              setState(() => _hasLoadedOnce = true);
             }
+            // صفحه آماده است | اسپلش اجازه برداشته شدن میگیرد.
+            _reportReady();
           },
           onProgress: (int progress) {
             if (mounted) {
@@ -688,10 +741,9 @@ class _WebViewHomeScreenState extends State<WebViewHomeScreen> {
           },
           onWebResourceError: (WebResourceError error) {
             if (mounted && error.isForMainFrame == true && !_hasLoadedOnce) {
-              setState(() {
-                _hasError = true;
-                _isLoading = false;
-              });
+              setState(() => _hasError = true);
+              // سایت بالا نیامد | اسپلش نباید تا سقف ۷ ثانیه منتظر بماند.
+              _reportReady();
             }
           },
         ),
@@ -717,10 +769,7 @@ class _WebViewHomeScreenState extends State<WebViewHomeScreen> {
   }
 
   void _retry() {
-    setState(() {
-      _hasError = false;
-      _isLoading = !_hasLoadedOnce;
-    });
+    setState(() => _hasError = false);
     _controller.reload();
   }
 
@@ -754,32 +803,7 @@ class _WebViewHomeScreenState extends State<WebViewHomeScreen> {
                     onRefresh: () => _controller.reload(),
                     child: WebViewWidget(controller: _controller),
                   ),
-                  if (_isLoading && !_hasError)
-                    Positioned.fill(
-                      child: ColoredBox(
-                        color: Colors.white,
-                        child: Center(
-                          child: Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              SpinKitCircle(
-                                color: widget.config.primaryColor,
-                                size: 64.0,
-                              ),
-                              const SizedBox(height: 18),
-                              Text(
-                                widget.config.appName,
-                                style: TextStyle(
-                                  color: widget.config.primaryColor,
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
+                  // لودینگ دومی وجود ندارد | اسپلش برند تا آماده شدن همین صفحه روی آن میماند.
                   if (_hasError)
                     OfflineErrorScreen(config: widget.config, onRetry: _retry),
                 ],

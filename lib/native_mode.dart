@@ -700,7 +700,11 @@ class _NativeHomeScreenState extends State<NativeHomeScreen> {
                       MaterialPageRoute<void>(
                         builder: (_) => NativeSearchScreen(
                           config: widget.config,
-                          suggestions: _searchSuggestions,
+                          // لیست محلی فقط با آمدن پاسخ سرور پر میشود؛ تا آن لحظه
+                          // از کانفیگ تازه استفاده میکنیم تا صفحه جستجو خالی نماند.
+                          suggestions: _searchSuggestions.isNotEmpty
+                              ? _searchSuggestions
+                              : widget.config.searchSuggestions,
                         ),
                       ),
                     ),
@@ -1854,6 +1858,11 @@ class NativeSearchScreen extends StatefulWidget {
   final AppConfig config;
   final List<String> suggestions;
 
+  /// پیشنهادهای نهایی | اگر صداکننده لیستی نداده باشد، از خود کانفیگ خوانده میشود؛
+  /// اینطور باز شدن صفحه جستجو هیچوقت به زمانبندی شبکه وابسته نیست.
+  List<String> get effectiveSuggestions =>
+      suggestions.isNotEmpty ? suggestions : config.searchSuggestions;
+
   @override
   State<NativeSearchScreen> createState() => _NativeSearchScreenState();
 }
@@ -2093,7 +2102,8 @@ class _NativeSearchScreenState extends State<NativeSearchScreen> {
     final List<WpItem>? results = _results;
     if (results == null) {
       // حالت اولیه: پیشنهادهای پرطرفدار (تنظیم نیتیو شماره ۵) یا راهنما
-      if (widget.suggestions.isNotEmpty) {
+      final List<String> suggestions = widget.effectiveSuggestions;
+      if (suggestions.isNotEmpty) {
         return ListView(
           padding: const EdgeInsets.all(14),
           children: <Widget>[
@@ -2110,7 +2120,7 @@ class _NativeSearchScreenState extends State<NativeSearchScreen> {
               spacing: 8,
               runSpacing: 8,
               children: <Widget>[
-                for (final String term in widget.suggestions)
+                for (final String term in suggestions)
                   _SuggestionChip(
                     term: term,
                     onTap: () {
