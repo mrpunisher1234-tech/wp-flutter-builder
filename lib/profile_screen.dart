@@ -6,6 +6,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'main.dart';
 import 'native_mode.dart';
+import 'skeleton.dart';
+import 'orders_screen.dart';
+import 'about_screen.dart';
+import 'addresses_screen.dart';
+import 'support_screen.dart';
 import 'product_reviews.dart';
 
 /// تب پروفایل | ورود دومرحله‌ای با شماره موبایل (OTP) + نمای کاربر
@@ -21,6 +26,9 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   int _step = 1; // ۱: شماره موبایل | ۲: کد تایید
   bool _isLoggedIn = false;
+
+  /// تا پایان خواندن نشست ذخیرهشده | صفحه ورود نباید فلش بزند.
+  bool _checking = true;
   bool _isLoading = false;
   String _userName = '';
   String _userPhone = '';
@@ -42,18 +50,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Future<void> _restoreSession() async {
-    final SharedPreferences prefs = await SharedPreferences.getInstance();
-    final String? token = prefs.getString('wptf_auth_token');
-    if (token != null && token.isNotEmpty) {
-      if (!mounted) return;
-      setState(() {
-        _isLoggedIn = true;
-        _userName = prefs.getString('wptf_user_name') ?? 'کاربر محترم';
-        _userPhone = prefs.getString('wptf_user_phone') ?? '';
-      });
-      // نشست استاتیک دیدگاه‌ها هم تازه می‌شود | گیت کارت ۸ دقیق می‌ماند.
-      UserSession.isLoggedIn = true;
-      UserSession.displayName = _userName;
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final String? token = prefs.getString('wptf_auth_token');
+      if (token != null && token.isNotEmpty) {
+        if (!mounted) return;
+        setState(() {
+          _isLoggedIn = true;
+          _userName = prefs.getString('wptf_user_name') ?? 'کاربر محترم';
+          _userPhone = prefs.getString('wptf_user_phone') ?? '';
+        });
+        // نشست استاتیک دیدگاه‌ها هم تازه می‌شود | گیت کارت ۸ دقیق می‌ماند.
+        UserSession.isLoggedIn = true;
+        UserSession.displayName = _userName;
+      }
+    } catch (_) {
+      // نشست خوانده نشد | مهمان در نظر گرفته میشود.
+    } finally {
+      if (mounted) {
+        setState(() => _checking = false);
+      }
     }
   }
 
@@ -93,7 +109,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           _step = 2;
           _isLoading = false;
         });
-        if (decoded is Map<String, dynamic> && decoded['mock'] == true) {
+        if (decoded['mock'] == true) {
           _showNotice('حالت آزمایشی: کد تایید شما 1234 است');
         }
       } else {
@@ -141,7 +157,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final bool success = decoded is Map<String, dynamic> && decoded['success'] == true;
       if (!mounted) return;
       if (response.statusCode == 200 && success) {
-        final Map<String, dynamic> data = decoded as Map<String, dynamic>;
+        final Map<String, dynamic> data = decoded;
         final Map<String, dynamic> user =
             data['user'] as Map<String, dynamic>? ?? <String, dynamic>{};
         final SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -189,7 +205,67 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return _isLoggedIn ? _buildLoggedInView() : _buildLoginView();
+    // تا پایان بررسی نشست، اسکلتون | فلش شدن صفحه ورود برای کاربر واردشده باگ است.
+    return _checking ? _buildSkeletonView() : _isLoggedIn ? _buildLoggedInView() : _buildLoginView();
+  }
+
+  /// اسکلتون پروفایل | هم‌چیدمان با نمای واردشده: کارت کاربر + کاشیهای منو.
+  Widget _buildSkeletonView() {
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          // کارت کاربر | آواتار + دو خط نام و شماره.
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Dk.border),
+            ),
+            child: Row(
+              children: <Widget>[
+                const SkeletonCircle(size: 56),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      // عرض ثابت | FractionallySizedBox داخل Row بی‌نهایت میشود.
+                      SkeletonBox(width: 120, height: 13, radius: 4),
+                      const SizedBox(height: 8),
+                      SkeletonBox(width: 90, height: 11, radius: 4),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          // کاشیهای منو | چهار ردیف با ارتفاع کاشی واقعی (۷۲).
+          for (int i = 0; i < 4; i++) ...<Widget>[
+            Container(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Dk.border),
+              ),
+              child: Row(
+                children: <Widget>[
+                  SkeletonBox(width: 22, height: 22, radius: 6),
+                  const SizedBox(width: 12),
+                  SkeletonBox(width: 110, height: 12, radius: 4),
+                ],
+              ),
+            ),
+            if (i < 3) const SizedBox(height: 0),
+          ],
+        ],
+      ),
+    );
   }
 
   Widget _buildLoginView() {
@@ -333,6 +409,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   ),
                 ),
               ],
+              const SizedBox(height: 24),
+              // مهمان هم به پشتیبانی و درباره دسترسی دارد | لاگین لازم نیست.
+              _buildProfileTile(
+                Icons.support_agent_outlined,
+                'پشتیبانی و تماس با ما',
+                () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => SupportScreen(config: widget.config),
+                  ),
+                ),
+              ),
+              _buildProfileTile(
+                Icons.info_outline,
+                'درباره ${widget.config.appName}',
+                () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => AboutScreen(config: widget.config),
+                  ),
+                ),
+              ),
             ],
           ),
         ),
@@ -387,10 +483,42 @@ class _ProfileScreenState extends State<ProfileScreen> {
           ),
         ),
         const SizedBox(height: 16),
-        _buildProfileTile(Icons.shopping_bag_outlined, 'سفارش‌های من', () {}),
-        _buildProfileTile(Icons.location_on_outlined, 'آدرس‌های من', () {}),
-        _buildProfileTile(Icons.support_agent_outlined, 'پشتیبانی و تماس با ما', () {}),
-        _buildProfileTile(Icons.info_outline, 'درباره ${widget.config.appName}', () {}),
+        _buildProfileTile(
+          Icons.shopping_bag_outlined,
+          'سفارش‌های من',
+          () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => OrdersScreen(config: widget.config),
+            ),
+          ),
+        ),
+        _buildProfileTile(
+          Icons.location_on_outlined,
+          'آدرس‌های من',
+          () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => AddressesScreen(config: widget.config),
+            ),
+          ),
+        ),
+        _buildProfileTile(
+          Icons.support_agent_outlined,
+          'پشتیبانی و تماس با ما',
+          () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => SupportScreen(config: widget.config),
+            ),
+          ),
+        ),
+        _buildProfileTile(
+          Icons.info_outline,
+          'درباره ${widget.config.appName}',
+          () => Navigator.of(context).push(
+            MaterialPageRoute<void>(
+              builder: (_) => AboutScreen(config: widget.config),
+            ),
+          ),
+        ),
         const SizedBox(height: 24),
         OutlinedButton.icon(
           style: OutlinedButton.styleFrom(

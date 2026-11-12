@@ -103,7 +103,7 @@ class WpItem {
             ? map['product'] as Map<String, dynamic>
             : <String, dynamic>{};
     final List<dynamic> categories =
-        map['categories'] as List<dynamic>? ?? const <dynamic>[];
+        map['categories'] is List ? map['categories'] as List<dynamic> : const <dynamic>[];
 
     return WpItem(
       id: (map['id'] as num?)?.toInt() ?? 0,
@@ -151,8 +151,9 @@ class WpItem {
               .toList(growable: false) ??
           const <WpItem>[],
       categoryNames: categories
+          .whereType<Map>()
           .map((dynamic category) =>
-              ((category as Map<String, dynamic>)['name'] as String?) ?? '')
+              ((category.cast<String, dynamic>())['name'] as String?) ?? '')
           .where((String name) => name.isNotEmpty)
           .toList(growable: false),
     );
@@ -160,9 +161,17 @@ class WpItem {
 }
 
 // --- تبدیل قیمت خام به فرمت تومانی و اعداد فارسی ---
+/// بخش صحیح قیمت | «150000.00» را «150000» میکند تا اعشار ۱۰۰ برابر نشود.
+String priceIntegerPart(String raw) {
+  final String trimmed = raw.trim();
+  final int dot = trimmed.indexOf('.');
+  return (dot == -1 ? trimmed : trimmed.substring(0, dot))
+      .replaceAll(RegExp(r'[^0-9]'), '');
+}
+
 String formatToman(String raw) {
   if (raw.isEmpty) return '';
-  final String clean = raw.replaceAll(RegExp(r'[^0-9]'), '');
+  final String clean = priceIntegerPart(raw);
   if (clean.isEmpty) return raw;
 
   final String withCommas = clean.replaceAllMapped(
@@ -192,9 +201,8 @@ String toPersianDigits(String input) {
 
 // --- محاسبه درصد تخفیف ---
 String? calcDiscountPercent(String regularPrice, String salePrice) {
-  final int? regular =
-      int.tryParse(regularPrice.replaceAll(RegExp(r'[^0-9]'), ''));
-  final int? sale = int.tryParse(salePrice.replaceAll(RegExp(r'[^0-9]'), ''));
+  final int? regular = int.tryParse(priceIntegerPart(regularPrice));
+  final int? sale = int.tryParse(priceIntegerPart(salePrice));
   if (regular != null && sale != null && regular > sale && regular > 0) {
     final int percent = (((regular - sale) / regular) * 100).round();
     if (percent > 0) return '٪$percent';
@@ -343,7 +351,8 @@ class _NativeHomeScreenState extends State<NativeHomeScreen> {
   Future<void> _fetchCategories() async {
     try {
       final Uri uri = Uri.parse(
-        '${widget.config.effectiveApiBaseUrl}categories?per_page=30',
+        '${widget.config.effectiveApiBaseUrl}categories?per_page=30'
+        '&taxonomy=product_cat&orderby=count&order=DESC',
       );
       final HttpClient client = HttpClient();
       final HttpClientRequest request = await client.getUrl(uri);
@@ -1574,6 +1583,7 @@ class ProductGridCard extends StatelessWidget {
   final VoidCallback onTap;
 
   const ProductGridCard({
+    super.key,
     required this.item,
     required this.primaryColor,
     required this.onTap,
@@ -2725,8 +2735,8 @@ class _ImageViewerScreenState extends State<_ImageViewerScreen> {
     final Offset position = _doubleTapPosition ?? Offset.zero;
     const double scale = 2.5;
     _zoom.value = Matrix4.identity()
-      ..translate(-position.dx * (scale - 1), -position.dy * (scale - 1))
-      ..scale(scale);
+      ..translateByDouble(-position.dx * (scale - 1), -position.dy * (scale - 1), 0, 1)
+      ..scaleByDouble(scale, scale, 1, 1);
   }
 
   @override
@@ -2815,7 +2825,7 @@ class _StockBadge extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: color.withOpacity(0.12),
+        color: color.withValues(alpha: 0.12),
         borderRadius: BorderRadius.circular(6),
       ),
       child: Text(
@@ -2844,12 +2854,79 @@ class NativeWebViewScreen extends StatefulWidget {
 class _NativeWebViewScreenState extends State<NativeWebViewScreen> {
   late final WebViewController _controller;
 
+  /// اصلاحات موبایل برای صفحات باز شده در وبویو (نشان اعتماد، تبلیغ، پرداخت):
+  /// متا ویوپورت + هیچ تصویری نباید از عرض صفحه بیرون بزند + پدینگ چپ/راست بدنه.
+  static const String _mobileFixesJs = r'''
+(function() {
+  try {
+    var head = document.head || document.documentElement;
+    if (!head) { return; }
+    var meta = document.querySelector('meta[name="viewport"]');
+    if (!meta) {
+      meta = document.createElement('meta');
+      meta.name = 'viewport';
+      head.appendChild(meta);
+    }
+    meta.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no');
+    if (!document.getElementById('wptf-webview-fix')) {
+      var style = document.createElement('style');
+      style.id = 'wptf-webview-fix';
+      style.textContent =
+        'html, body { overflow-x: hidden !important; max-width: 100vw !important; } ' +
+        'img, video, iframe, table { max-width: 100% !important; height: auto !important; } ' +
+        'body { padding-left: 8px !important; padding-right: 8px !important; box-sizing: border-box !important; }';
+      head.appendChild(style);
+    }
+  } catch (e) {}
+})();
+''';
+
   @override
   void initState() {
     super.initState();
     _controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..loadRequest(Uri.parse(widget.url));
+      ..setNavigationDelegate(
+        NavigationDelegate(
+          onPageStarted: (String url) {
+            _applyMobileFixes();
+          },
+          onPageFinished: (String url) {
+            _applyMobileFixes();
+          },
+          onNavigationRequest: (NavigationRequest request) {
+            // اسکیمهای بومی درون وبویو کرش میکنند | به سیستم واگذار میشوند.
+            final Uri? uri = Uri.tryParse(request.url);
+            final String scheme = (uri?.scheme ?? '').toLowerCase();
+            const List<String> externalSchemes = <String>[
+              'tel', 'mailto', 'sms', 'whatsapp', 'intent', 'geo', 'market',
+              'tg', 'instagram', 'telegram', 'eitaa',
+            ];
+            if (externalSchemes.contains(scheme)) {
+              return NavigationDecision.prevent;
+            }
+            // شبیهساز اندروید | میزبان محلی به 10.0.2.2 نگاشت میشود.
+            if (Platform.isAndroid && (scheme == 'http' || scheme == 'https') && uri != null) {
+              final String host = uri.host.toLowerCase();
+              if (host == 'localhost' || host == '127.0.0.1') {
+                final Uri mapped = uri.replace(host: '10.0.2.2');
+                if (mapped.toString() != request.url) {
+                  _controller.loadRequest(mapped);
+                  return NavigationDecision.prevent;
+                }
+              }
+            }
+            return NavigationDecision.navigate;
+          },
+        ),
+      )
+      ..loadRequest(Uri.parse(AppConfig.mapEmulatorUrl(widget.url)));
+  }
+
+  Future<void> _applyMobileFixes() async {
+    try {
+      await _controller.runJavaScript(_mobileFixesJs);
+    } catch (_) {}
   }
 
   @override

@@ -118,7 +118,10 @@ jobs:
       KEYSTORE_PASS: ${{ github.event.client_payload.keystore_pass || github.event.inputs.keystore_pass || '' }}
       KEY_ALIAS: ${{ github.event.client_payload.key_alias || github.event.inputs.key_alias || 'wptf_release' }}
       PACKAGE_NAME: ${{ github.event.client_payload.package_name || github.event.inputs.package_name || '' }}
-      SPLASH_SHOW_LOGO: ${{ github.event.client_payload.splash_show_logo || github.event.inputs.splash_show_logo || 'true' }}
+      # false از client_payload نباید به 'true' تبدیل شود | مقایسه با null کافی نیست
+      # چون true && false میشود false و از || 'true' رد میشود؛ پس false واقعی
+      # با ternary مستقیم به 'false' تبدیل میشود.
+      SPLASH_SHOW_LOGO: ${{ github.event.client_payload.splash_show_logo == false ? 'false' : (github.event.client_payload.splash_show_logo || github.event.inputs.splash_show_logo || 'true') }}
       SPLASH_IMAGE_URL: ${{ github.event.client_payload.splash_image_url || github.event.inputs.splash_image_url || '' }}
       SPLASH_SITE_ICON: ${{ github.event.client_payload.splash_site_icon || github.event.inputs.splash_site_icon || '' }}
       SPLASH_LOGO_URL: ${{ github.event.client_payload.splash_logo_url || github.event.inputs.splash_logo_url || github.event.client_payload.splash_image_url || github.event.inputs.splash_image_url || github.event.client_payload.splash_site_icon || github.event.inputs.splash_site_icon || '' }}
@@ -618,7 +621,7 @@ jobs:
       - name: 'Write Build Summary'
         run: |
           {
-            printf '## %s — build #%s\n\n' "$APP_NAME" "${{ github.run_number }}"
+            printf '## %s - build #%s\n\n' "$APP_NAME" "${{ github.run_number }}"
             printf '| Setting | Value |\n| --- | --- |\n'
             printf '| Splash background | `%s` |\n' "${SPLASH_BG_HEX:-unknown}"
             printf '| Splash logo enabled | %s |\n' "${SPLASH_LOGO_ENABLED:-unknown}"
@@ -634,12 +637,12 @@ jobs:
           BASE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/build-${{ github.run_number }}"
           APK_CELL="[Download APK](${BASE_URL}/app-release.apk)"
           AAB_CELL="[Download AAB](${BASE_URL}/app-release.aab)"
-          if [ "$BUILD_FORMAT" = "apk" ]; then AAB_CELL="—"; fi
-          if [ "$BUILD_FORMAT" = "aab" ]; then APK_CELL="—"; fi
+          if [ "$BUILD_FORMAT" = "apk" ]; then AAB_CELL="-"; fi
+          if [ "$BUILD_FORMAT" = "aab" ]; then APK_CELL="-"; fi
           # اگر README نباشد یا سرستونهای جدول حذف شده باشند، جدول خودش را دوباره میسازد
           # تا ردیفهای بیلد به صورت متن خام و بیسرستون رندر نشوند.
           if [ ! -f README.md ] || ! grep -q '^| --- ' README.md; then
-            printf '%s\n\n' '# WP to Flutter — Build Showcase' >> README.md
+            printf '%s\n\n' '# WP to Flutter - Build Showcase' >> README.md
             printf '%s\n' '| App | Built | APK | AAB |' '| --- | --- | --- | --- |' >> README.md
           fi
           printf '| %s | %s | %s | %s |\n' "$APP_NAME" "$BUILD_DATE" "$APK_CELL" "$AAB_CELL" >> README.md

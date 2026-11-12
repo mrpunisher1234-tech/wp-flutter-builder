@@ -751,7 +751,9 @@ class _AddReviewBottomSheetState extends State<_AddReviewBottomSheet> {
             TextField(
               controller: _commentController,
               maxLines: 3,
+              maxLength: 1000,
               decoration: InputDecoration(
+                counterText: '',
                 hintText: 'متن نظر خود را بنویسید…',
                 hintStyle: const TextStyle(fontSize: 12, color: Dk.text4),
                 border: OutlineInputBorder(

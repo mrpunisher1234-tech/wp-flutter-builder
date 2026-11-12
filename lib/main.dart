@@ -2,13 +2,16 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 
+import 'cart_screen.dart';
 import 'native_mode.dart';
+import 'payment_result_screen.dart';
 import 'splash_screen.dart';
 
 /// بنر اسلایدر خانه | تصویر + لینک مقصد (لینک خالی = کلیک‌ناپذیر).
@@ -22,6 +25,21 @@ class NativeBanner {
 /// مسیر لوگوی اسپلشی که بیلد ابری داخل APK میگذارد.
 /// وجود این فایل یعنی اسپلش در فریم اول و بدون انتظار شبکه رسم میشود.
 const String kSplashLogoAssetPath = 'assets/splash_logo.png';
+
+/// یک نشان اعتماد (اینماد، ساماندهی و...) | تصویر + لینک اختیاری.
+class AboutBadge {
+  const AboutBadge({required this.image, required this.link});
+
+  final String image;
+  final String link;
+
+  factory AboutBadge.fromMap(Map<String, dynamic> map) {
+    return AboutBadge(
+      image: ((map['image'] as String?) ?? '').trim(),
+      link: ((map['link'] as String?) ?? '').trim(),
+    );
+  }
+}
 
 /// Application identity injected by the WP to Flutter cloud build engine.
 class AppConfig {
@@ -51,6 +69,17 @@ class AppConfig {
     this.splashSiteIconUrl = '',
     this.splashSiteName = '',
     this.splashLogoBundledUrl = '',
+    this.supportStoreName = '',
+    this.supportStorePhone = '',
+    this.aboutText = '',
+    this.aboutBadges = const <AboutBadge>[],
+    this.checkoutMode = 'native',
+    this.ordersPerPage = 10,
+    this.requirePostcode = true,
+    this.requireOrderNote = false,
+    this.enableCoupons = true,
+    this.defaultShippingCost = 0,
+    this.deepLinkScheme = 'wptoflutter',
   });
 
   final String appName;
@@ -83,6 +112,19 @@ class AppConfig {
   /// آدرس لوگویی که در زمان بیلد داخل APK بستهبندی شده (خالی = بستهبندی نشده).
   /// با مقدار زنده مقایسه میشود تا اگر ادمین بعداً لوگو را عوض کرد، نسخه قدیمی نشان داده نشود.
   final String splashLogoBundledUrl;
+  final String supportStoreName;
+  final String supportStorePhone;
+  final String aboutText;
+  final List<AboutBadge> aboutBadges;
+  // تنظیم ۱۴ | تسویه‌حساب نیتیو و سوابق سفارشات.
+  final String checkoutMode;
+  final int ordersPerPage;
+  final bool requirePostcode;
+  final bool requireOrderNote;
+  final bool enableCoupons;
+  final int defaultShippingCost;
+  // تنظیم ۱۴ | اسکیمای بازگشت پرداخت (دیپ‌لینک).
+  final String deepLinkScheme;
 
   /// لوگوی نهایی اسپلش | اولویت حلشده سمت وردپرس، وگرنه:
   /// ۱. لوگوی اختصاصی اسپلش، ۲. آیکون سایت، ۳. آیکون رسمی اپ.
@@ -155,6 +197,10 @@ class AppConfig {
         (map['app'] as Map<dynamic, dynamic>?) ?? <dynamic, dynamic>{};
     final Map<dynamic, dynamic> icon =
         (app['icon'] as Map<dynamic, dynamic>?) ?? <dynamic, dynamic>{};
+    final Map<dynamic, dynamic> supportBlock =
+        (map['support'] is Map) ? (map['support'] as Map).cast<dynamic, dynamic>() : <dynamic, dynamic>{};
+    final Map<dynamic, dynamic> aboutBlock =
+        (map['about'] is Map) ? (map['about'] as Map).cast<dynamic, dynamic>() : <dynamic, dynamic>{};
     final String resolvedAppIcon = AppConfig.mapEmulatorUrl(
       ((icon['url'] as String?) ?? (map['app_icon_url'] as String?) ?? '').trim(),
     );
@@ -172,7 +218,24 @@ class AppConfig {
       // همان چهار عبارت پرطرفدار که بیلد ابری داخل APK میپزد؛ از این پس
       // صفحه جستجو حتی بدون شبکه و در اولین فریم هم آنها را دارد.
       searchSuggestions: parseSuggestions(map['search_suggestions']),
+      supportStoreName: ((supportBlock['store_name'] as String?) ?? '').trim(),
+      supportStorePhone: ((supportBlock['store_phone'] as String?) ?? '').trim(),
+      aboutText: ((aboutBlock['text'] as String?) ?? '').trim(),
+      aboutBadges: parseBadges(aboutBlock['badges']),
     );
+  }
+
+  /// نشان‌های اعتماد | بدون تصویر حذف می‌شوند و مقدار غیرلیست نادیده گرفته می‌شود.
+  static List<AboutBadge> parseBadges(dynamic raw) {
+    return (raw is List ? raw : const <dynamic>[])
+        .whereType<Map>()
+        .map(
+          (Map row) => AboutBadge.fromMap(
+            row.cast<String, dynamic>(),
+          ),
+        )
+        .where((AboutBadge badge) => badge.image.isNotEmpty)
+        .toList(growable: false);
   }
 
   /// چهار عبارت پرطرفدار | خالیها حذف و بیشتر از چهار مورد پذیرفته نمیشود.
@@ -262,15 +325,33 @@ class AppConfig {
         : AppConfig.mapEmulatorUrl(liveAppIcon.toString().trim());
 
     String pickText(String inner, String flat, String inherited) {
-      final dynamic a = splash[inner];
-      if (a != null && a.toString().trim().isNotEmpty) {
-        return a.toString().trim();
+      // کلید موجود یعنی مقدار خالی هم عمدی است | نه برگشت به کش قدیمی.
+      if (splash.containsKey(inner)) {
+        final dynamic a = splash[inner];
+        return a == null ? '' : a.toString().trim();
       }
-      final dynamic b = map[flat];
-      if (b != null && b.toString().trim().isNotEmpty) {
-        return b.toString().trim();
+      if (map.containsKey(flat)) {
+        final dynamic b = map[flat];
+        return b == null ? '' : b.toString().trim();
       }
       return inherited;
+    }
+
+    final Map<dynamic, dynamic> supportBlock =
+        (map['support'] is Map) ? (map['support'] as Map).cast<dynamic, dynamic>() : <dynamic, dynamic>{};
+    final Map<dynamic, dynamic> aboutBlock =
+        (map['about'] is Map) ? (map['about'] as Map).cast<dynamic, dynamic>() : <dynamic, dynamic>{};
+
+    String blockText(Map<dynamic, dynamic> block, String key, String inherited) {
+      // غایب یعنی قدیم حفظ شود | موجود ولی خالی یعنی عمداً پاک شده.
+      if (!block.containsKey(key) || block[key] == null) return inherited;
+      return block[key].toString().trim();
+    }
+
+    List<AboutBadge> blockBadges(Map<dynamic, dynamic> block, List<AboutBadge> inherited) {
+      if (!block.containsKey('badges')) return inherited;
+      // لیست خالی عمدی یعنی همه نشان‌ها حذف شدهاند | قدیم برنگردد.
+      return parseBadges(block['badges']);
     }
 
     bool pickBool(String inner, String flat, bool inherited) {
@@ -330,6 +411,19 @@ class AppConfig {
         'splash_site_name',
         splashSiteName,
       ),
+      // اطلاعات تماس و درباره ما | اگر بلوک در پاسخ نبود، مقدار فعلی حفظ می‌شود.
+      supportStoreName: blockText(supportBlock, 'store_name', supportStoreName),
+      supportStorePhone: blockText(supportBlock, 'store_phone', supportStorePhone),
+      aboutText: blockText(aboutBlock, 'text', aboutText),
+      aboutBadges: blockBadges(aboutBlock, aboutBadges),
+      // تنظیم ۱۴ | تسویه‌حساب نیتیو | از پاسخ سرور عیناً منتقل میشود.
+      checkoutMode: checkoutMode,
+      ordersPerPage: ordersPerPage,
+      requirePostcode: requirePostcode,
+      requireOrderNote: requireOrderNote,
+      enableCoupons: enableCoupons,
+      defaultShippingCost: defaultShippingCost,
+      deepLinkScheme: deepLinkScheme,
       // این دو مقدار در زمان بیلد تثبیت شدهاند و هرگز از راه دور بازنویسی نمیشوند.
       splashLogoBundledUrl: pickText(
         'logo_bundled_url',
@@ -350,6 +444,13 @@ class AppConfig {
       final String body = await response.transform(utf8.decoder).join();
       final dynamic decoded = jsonDecode(body);
       if (decoded is! Map<String, dynamic>) return this;
+
+      final Map<dynamic, dynamic> checkoutBlock =
+          (decoded['checkout'] is Map)
+              ? (decoded['checkout'] as Map).cast<dynamic, dynamic>()
+              : <dynamic, dynamic>{};
+      final String remoteScheme =
+          ((decoded['deep_link_scheme'] as String?) ?? '').trim();
 
       final AppConfig base = AppConfig(
         appName: appName,
@@ -381,6 +482,30 @@ class AppConfig {
         reviewsGuestPost: decoded['reviews_guest_post'] != false,
         sliderInterval:
             ((decoded['slider_interval'] as num?)?.toInt() ?? sliderInterval).clamp(3, 15),
+        supportStoreName: supportStoreName,
+        supportStorePhone: supportStorePhone,
+        aboutText: aboutText,
+        aboutBadges: aboutBadges,
+        // تنظیم ۱۴ | تسویه‌حساب نیتیو | مقادیر غایب یعنی قدیم حفظ شود.
+        checkoutMode: ((checkoutBlock['mode'] as String?) == 'webview')
+            ? 'webview'
+            : 'native',
+        ordersPerPage: (checkoutBlock['orders_per_page'] as num?)?.toInt() ??
+            ordersPerPage,
+        requirePostcode: checkoutBlock['require_postcode'] == null
+            ? requirePostcode
+            : checkoutBlock['require_postcode'] == true,
+        requireOrderNote: checkoutBlock['require_order_note'] == null
+            ? requireOrderNote
+            : checkoutBlock['require_order_note'] == true,
+        enableCoupons: checkoutBlock['enable_coupons'] == null
+            ? enableCoupons
+            : checkoutBlock['enable_coupons'] == true,
+        defaultShippingCost:
+            (checkoutBlock['default_shipping_cost'] as num?)?.toInt() ??
+                defaultShippingCost,
+        deepLinkScheme:
+            remoteScheme.isEmpty ? deepLinkScheme : remoteScheme,
         // مقادیر اسپلش عیناً منتقل میشوند تا اگر پاسخ سرور ناقص بود، مقدار فعلی از دست نرود.
         splashImageUrl: splashImageUrl,
         splashLogoUrl: splashLogoUrl,
@@ -419,7 +544,7 @@ class AppConfig {
   }
 
   static List<NativeBanner> parseBanners(dynamic raw) {
-    return ((raw as List?) ?? const <dynamic>[])
+    return (raw is List ? raw : const <dynamic>[])
         .map((dynamic item) {
           if (item is Map<String, dynamic>) {
             return NativeBanner(
@@ -465,6 +590,24 @@ class WpToFlutterApp extends StatelessWidget {
           backgroundColor: config.primaryColor,
           foregroundColor: Colors.white,
         ),
+        // حذف هاله قهوه‌ای Material 3 | surfaceTint روی مودال/دیالوگ اعمال نمیشود.
+        snackBarTheme: const SnackBarThemeData(
+          backgroundColor: Colors.black,
+          contentTextStyle: TextStyle(color: Colors.white, fontSize: 13),
+          behavior: SnackBarBehavior.floating,
+        ),
+        bottomSheetTheme: const BottomSheetThemeData(
+          backgroundColor: Colors.white,
+          modalBackgroundColor: Colors.white,
+          surfaceTintColor: Colors.transparent,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+          ),
+        ),
+        dialogTheme: const DialogThemeData(
+          backgroundColor: Colors.white,
+          surfaceTintColor: Colors.transparent,
+        ),
       ),
       home: _SplashGate(config: config),
     );
@@ -494,6 +637,7 @@ class _SplashGateState extends State<_SplashGate>
   late final AnimationController _fade;
   Timer? _minimumTimer;
   Timer? _ceilingTimer;
+  StreamSubscription<Uri>? _linkSub;
   late AppConfig _current;
   AppConfig? _pending;
   bool _minimumElapsed = false;
@@ -537,6 +681,43 @@ class _SplashGateState extends State<_SplashGate>
 
     // دریافت تنظیمات در پسزمینه (هم وبویو و هم نیتیو) کاملاً غیرمسدودکننده.
     _syncRemoteSettings();
+
+    // دیپ‌لینک بازگشت از درگاه پرداخت | wptoflutter://payment-result
+    _listenDeepLinks();
+  }
+
+  /// رهگیری دیپ‌لینک نتیجه پرداخت | مرورگرِ درگاه بعد از تأیید به اپ برمیگردد.
+  void _listenDeepLinks() {
+    try {
+      _linkSub = AppLinks().uriLinkStream.listen(
+        _handlePaymentDeepLink,
+        onError: (Object error) {},
+      );
+    } catch (_) {}
+  }
+
+  /// نتیجه پرداخت از مرورگر رسید | سبد در موفقیت خالی و صفحه نتیجه باز میشود.
+  void _handlePaymentDeepLink(Uri uri) {
+    final String scheme = _current.deepLinkScheme.trim().isEmpty
+        ? 'wptoflutter'
+        : _current.deepLinkScheme.trim();
+    if (uri.scheme.toLowerCase() != scheme.toLowerCase()) {
+      return;
+    }
+    if (uri.host != 'payment-result') {
+      return;
+    }
+    if ((uri.queryParameters['status'] ?? '') == 'success') {
+      CartManager.instance.clearCart();
+    }
+    if (!mounted) {
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => PaymentResultScreen(uri: uri, config: _current),
+      ),
+    );
   }
 
   /// وبویو خبر میدهد که صفحه آماده است (onPageFinished یا خطای صفحه اصلی).
@@ -585,6 +766,7 @@ class _SplashGateState extends State<_SplashGate>
   void dispose() {
     _minimumTimer?.cancel();
     _ceilingTimer?.cancel();
+    _linkSub?.cancel();
     _fade.dispose();
     super.dispose();
   }
@@ -661,6 +843,7 @@ class _WebViewHomeScreenState extends State<WebViewHomeScreen> {
       style.id = 'wptf-universal-mobile-fix';
       style.textContent =
         'html, body { overflow-x: hidden !important; max-width: 100vw !important; width: 100% !important; -webkit-overflow-scrolling: touch !important; } ' +
+        'img, video, iframe, table { max-width: 100% !important; height: auto !important; } ' +
         '#wpadminbar { display: none !important; }';
       head.appendChild(style);
     }

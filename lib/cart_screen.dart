@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'checkout_screen.dart';
 import 'main.dart';
 import 'native_mode.dart';
 
@@ -18,14 +19,15 @@ class CartItem {
     final String raw = item.onSale && item.salePrice.isNotEmpty
         ? item.salePrice
         : item.price;
-    return int.tryParse(raw.replaceAll(RegExp(r'[^0-9]'), '')) ?? 0;
+    // اعشار حذف میشود | «150000.00» نباید ۱۰۰ برابر قیمت شود.
+    return int.tryParse(priceIntegerPart(raw)) ?? 0;
   }
 
   int get unitRegularPrice {
     final String raw = item.regularPrice.isNotEmpty
         ? item.regularPrice
         : item.price;
-    return int.tryParse(raw.replaceAll(RegExp(r'[^0-9]'), '')) ?? unitPrice;
+    return int.tryParse(priceIntegerPart(raw)) ?? unitPrice;
   }
 }
 
@@ -126,7 +128,9 @@ class CartManager extends ChangeNotifier {
       final SharedPreferences prefs = await SharedPreferences.getInstance();
       final String? jsonString = prefs.getString(_storageKey);
       if (jsonString == null || jsonString.isEmpty) return;
-      final List<dynamic> decoded = jsonDecode(jsonString) as List<dynamic>;
+      final dynamic decodedCart = jsonDecode(jsonString);
+      final List<dynamic> decoded =
+          decodedCart is List ? decodedCart : const <dynamic>[];
       final List<CartItem> restored = <CartItem>[];
       for (final dynamic element in decoded) {
         if (element is! Map<String, dynamic>) continue;
@@ -197,6 +201,16 @@ class _CartViewState extends State<CartView> {
     final List<CartItem> items = CartManager.instance.items;
     if (items.isEmpty || _handingOff) return;
 
+    // تنظیم ۱۴ | حالت نیتیو: فرم خرید داخل اپ، فقط صفحه درگاه در مرورگر.
+    if (widget.config.checkoutMode == 'native') {
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => NativeCheckoutScreen(config: widget.config),
+        ),
+      );
+      return;
+    }
+
     final String apiBase = widget.config.effectiveApiBaseUrl;
     final String siteBase = apiBase.contains('/wp-json/')
         ? apiBase.split('/wp-json/').first
@@ -204,6 +218,11 @@ class _CartViewState extends State<CartView> {
 
     setState(() => _handingOff = true);
     try {
+      // توکن ورود | اگر کاربر وارد باشد، سرور آدرس پیش‌فرضش را به فرم
+      // تسویه‌حساب تزریق می‌کند؛ بدون توکن، همان مسیر مهمان قبلی.
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final String? authToken = prefs.getString('wptf_auth_token');
+
       final Uri uri = Uri.parse('${apiBase}cart-handoff');
       final HttpClient client = HttpClient()
         ..connectionTimeout = const Duration(seconds: 5);
@@ -219,6 +238,7 @@ class _CartViewState extends State<CartView> {
                   'quantity': cartItem.quantity,
                 },
             ],
+            if (authToken != null && authToken.isNotEmpty) 'auth_token': authToken,
           }),
         ),
       );
