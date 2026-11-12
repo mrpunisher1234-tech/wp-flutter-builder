@@ -47,6 +47,9 @@ class _NativeCheckoutScreenState extends State<NativeCheckoutScreen> {
   bool _submitting = false;
   String? _appliedCode;
   int _discountAmount = 0;
+  // سفارش ناتمام همین نشست | اگر درخواست پرداخت شکست بخورد، تلاش بعدی
+  // سفارش pending تکراری نمی‌سازد و همان سفارش را دوباره استفاده می‌کند.
+  int? _pendingOrderId;
 
   @override
   void initState() {
@@ -247,6 +250,10 @@ class _NativeCheckoutScreenState extends State<NativeCheckoutScreen> {
       ),
     );
 
+    // قبل از هر await گرفته می‌شود تا بستن لودینگ حتی بعد از unmount هم امن
+    // باشد و هیچ‌وقت دو بار pop نشود (پاپ دوم صفحهٔ چک‌اوت را می‌بست).
+    final NavigatorState navigator = Navigator.of(context);
+    bool dialogOpen = true;
     HttpClient? client;
     try {
       final SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -255,13 +262,16 @@ class _NativeCheckoutScreenState extends State<NativeCheckoutScreen> {
       client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
 
       // ۱) ساخت سفارش | قیمتها و موجودی از خود ووکامرس خوانده میشود.
-      final int orderId = await _createOrder(client, token);
+      final int orderId = _pendingOrderId ?? await _createOrder(client, token);
+      _pendingOrderId = orderId;
 
       // ۲) لینک درگاه | زرین‌پال StartPay.
       final String paymentUrl = await _requestPayment(client, orderId, token);
 
-      if (!mounted) return;
-      Navigator.of(context).pop(); // بستن لودینگ
+      if (dialogOpen) {
+        dialogOpen = false;
+        navigator.pop(); // بستن لودینگ
+      }
 
       // ۳) صفحه امن بانک در مرورگر گوشی | بعد از پرداخت دیپ‌لینک به اپ برمیگردد.
       final Uri gatewayUri = Uri.parse(paymentUrl);
@@ -272,13 +282,19 @@ class _NativeCheckoutScreenState extends State<NativeCheckoutScreen> {
       }
       _notice('صفحه پرداخت باز شد | پس از پرداخت به اپ برمی‌گردید');
     } on WptfApiException catch (error) {
+      if (dialogOpen) {
+        dialogOpen = false;
+        navigator.pop();
+      }
       if (mounted) {
-        Navigator.of(context).pop();
         _notice(error.message);
       }
     } catch (_) {
+      if (dialogOpen) {
+        dialogOpen = false;
+        navigator.pop();
+      }
       if (mounted) {
-        Navigator.of(context).pop();
         _notice('خطا در ارتباط با سایت');
       }
     } finally {

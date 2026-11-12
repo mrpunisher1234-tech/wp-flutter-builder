@@ -12,7 +12,8 @@ class PaymentResultScreen extends StatelessWidget {
   final Uri uri;
   final AppConfig config;
 
-  bool get _success => (uri.queryParameters['status'] ?? '') == 'success';
+  bool get _success =>
+      (uri.queryParameters['status'] ?? '').toLowerCase() == 'success';
 
   int get _orderId => int.tryParse(uri.queryParameters['order_id'] ?? '') ?? 0;
 

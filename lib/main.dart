@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 
+import 'bazaar_payment.dart';
 import 'cart_screen.dart';
 import 'native_mode.dart';
 import 'payment_result_screen.dart';
@@ -25,6 +26,12 @@ class NativeBanner {
 /// مسیر لوگوی اسپلشی که بیلد ابری داخل APK میگذارد.
 /// وجود این فایل یعنی اسپلش در فریم اول و بدون انتظار شبکه رسم میشود.
 const String kSplashLogoAssetPath = 'assets/splash_logo.png';
+
+/// درگاه پرداخت درون‌برنامه‌ای کافه‌بازار | باید false بماند تا اتصال به درگاه
+/// برقرار شود؛ اعتبارسنجی خرید سمت سرور با REST خود کافه‌بازار انجام می‌شود
+/// (lib/bazaar_payment.dart). کلید RSA فقط وقتی لازم است که مقدار بالا true باشد.
+const bool kUseLocalSignatureCheck = false;
+const String kBazaarRsaPublicKey = '';
 
 /// یک نشان اعتماد (اینماد، ساماندهی و...) | تصویر + لینک اختیاری.
 class AboutBadge {
@@ -566,6 +573,14 @@ class AppConfig {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final AppConfig config = await AppConfig.load();
+  // درگاه پرداخت درون‌برنامه‌ای کافه‌بازار | فقط روی اندروید وصل می‌شود؛
+  // چون kUseLocalSignatureCheck برابر false است، کلید RSA پاس داده نمی‌شود.
+  BazaarPayments.instance.init(
+    apiBase: config.effectiveApiBaseUrl,
+    rsaKey: kUseLocalSignatureCheck && kBazaarRsaPublicKey.isNotEmpty
+        ? kBazaarRsaPublicKey
+        : null,
+  );
   runApp(WpToFlutterApp(config: config));
 }
 
@@ -704,10 +719,13 @@ class _SplashGateState extends State<_SplashGate>
     if (uri.scheme.toLowerCase() != scheme.toLowerCase()) {
       return;
     }
-    if (uri.host != 'payment-result') {
+    // بعضی درگاه‌ها لینک را بدون //host برمی‌گردانند؛ در آن حالت مقدار در path است.
+    final String host = uri.host.toLowerCase();
+    final String path = uri.path.replaceFirst(RegExp(r'^/'), '').toLowerCase();
+    if (host != 'payment-result' && path != 'payment-result') {
       return;
     }
-    if ((uri.queryParameters['status'] ?? '') == 'success') {
+    if ((uri.queryParameters['status'] ?? '').toLowerCase() == 'success') {
       CartManager.instance.clearCart();
     }
     if (!mounted) {

@@ -20,6 +20,8 @@ dependencies:
   app_links: ^6.4.0
   flutter_widget_from_html_core: ^0.17.4
   shared_preferences: ^2.5.5
+  # درگاه پرداخت درون‌برنامه‌ای کافه‌بازار | فقط روی اندروید کار می‌کند.
+  flutter_poolakey: ^2.2.0+1.0.0
 
 dev_dependencies:
   flutter_test:

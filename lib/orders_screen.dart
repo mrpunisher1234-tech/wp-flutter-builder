@@ -355,8 +355,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
         _isLoadingMore = false;
         if (!loadMore) {
           _error = 'خطا در دریافت سفارش‌ها';
+          _hasMore = false;
         }
-        _hasMore = false;
+        // خطای گذرای «بیشتر» | _hasMore برقرار می‌ماند تا اسکرول بعدی دوباره
+        // تلاش کند و بقیهٔ صفحات از دست نروند.
       });
     } finally {
       client?.close(force: true);
