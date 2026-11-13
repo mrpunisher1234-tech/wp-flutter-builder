@@ -27,6 +27,7 @@ class PendingBazaarPurchase {
     this.payload = '',
     this.attempts = 0,
     this.credited = false,
+    this.wcOrderId = 0,
   });
 
   factory PendingBazaarPurchase.fromMap(Map<String, dynamic> map) {
@@ -38,6 +39,7 @@ class PendingBazaarPurchase {
       payload: (map['payload'] ?? '').toString(),
       attempts: (map['attempts'] is num) ? (map['attempts'] as num).toInt() : 0,
       credited: (map['credited'] ?? false) == true,
+      wcOrderId: (map['wc_order_id'] is num) ? (map['wc_order_id'] as num).toInt() : 0,
     );
   }
 
@@ -50,6 +52,7 @@ class PendingBazaarPurchase {
 
   /// سرور این خرید را ثبت کرده | دیگر verify نمی‌خواهد؛ فقط consume.
   bool credited;
+  int wcOrderId;
 
   Map<String, dynamic> toMap() => <String, dynamic>{
         'sku': sku,
@@ -59,14 +62,27 @@ class PendingBazaarPurchase {
         'payload': payload,
         'attempts': attempts,
         'credited': credited,
+        'wc_order_id': wcOrderId,
       };
 }
 
 /// نتیجهٔ استعلام تسویه از سرور.
 class _VerifyOutcome {
-  const _VerifyOutcome({required this.credited, required this.retryable});
+  const _VerifyOutcome({
+    required this.credited,
+    required this.retryable,
+    this.creditedOrderId = 0,
+  });
   final bool credited;
   final bool retryable;
+  final int creditedOrderId;
+}
+
+/// نتیجهٔ تسویهٔ صریح یک توکن | برای چکاوت نیتیو.
+class BazaarSettlement {
+  const BazaarSettlement({required this.credited, this.orderId = 0});
+  final bool credited;
+  final int orderId;
 }
 
 /// درگاه پرداخت درون‌برنامه‌ای کافه‌بازار (Poolakey).
@@ -97,6 +113,17 @@ class BazaarPayments {
   bool _purchaseInFlight = false;
   bool _recoveryRunning = false;
   HttpClient? _client;
+
+  /// دنبالهٔ نوشتن صف | نوشتنهای همزمان (خرید در جریان + بازیابی) یکدیگر را
+  /// بازنویسی نکنند | الگوی کارا از پروژهٔ kalamikoo.
+  Future<void> _queueMutexTail = Future<void>.value();
+
+  /// اجرای یک عملیات نوشتن صف به‌صورت سریالی.
+  Future<void> _withQueueMutex(Future<void> Function() action) {
+    final Future<void> tail = _queueMutexTail.then((_) => action());
+    _queueMutexTail = tail.catchError((Object e) {});
+    return tail;
+  }
 
   /// کانال خود پلاگین | فقط به‌عنوان مسیر tolerant برای خواندن انبار مصرف‌نشده
   /// وقتی PurchaseInfo.fromMap پلاگین روی رکورد ناسازگار خطا می‌دهد.
@@ -215,15 +242,22 @@ class BazaarPayments {
           packageName: info.packageName,
           payload: payload,
         ));
-        // تسویهٔ فوری؛ اگر شکست بخورد در اجرای بعدی بازیابی می‌شود.
+        // تسویهٔ فوری؛ اگر شکست بخورد در اجرای بعدی بازیابی میشود.
         unawaited(recoverPurchases());
         return info;
       } on TimeoutException {
-        // پول کاربر ممکن است پرداخت شده باشد؛ بازیابی ثبتش می‌کند.
+        // پول کاربر ممکن است پرداخت شده باشد؛ بازیابی ثبتش میکند.
         unawaited(recoverPurchases());
         return null;
       } on PlatformException catch (e) {
         debugPrint('bazaar: purchase failed ${e.code} ${e.message ?? ''}');
+        // خطای بازار لزوماً پرداختنشدن نیست | خرید قبلی پرداختشده بررسی میشود.
+        unawaited(recoverPurchases());
+        return null;
+      } catch (e) {
+        // خطای غیرمنتظرهٔ خود پلاگین (مثل StateError هنگام parse نتیجه) |
+        // پول کاربر پرداخت شده و توکن مصرفنشده در بازار مانده است.
+        debugPrint('bazaar: purchase threw $e');
         unawaited(recoverPurchases());
         return null;
       }
@@ -304,17 +338,19 @@ class BazaarPayments {
       }
 
       bool changed = false;
+      final Set<String> removedTokens = <String>{};
       for (final PendingBazaarPurchase rec in queue.values.toList(growable: false)) {
         if (rec.attempts >= kMaxBazaarVerifyAttempts) {
-          // سقف تلاش پر شده | رکورد برای پیگیری پشتیبانی می‌ماند.
+          // سقف تلاش پر شده | رکورد برای پیگیری پشتیبانی میماند.
           continue;
         }
         if (rec.credited) {
-          // سرور قبلاً ثبتش کرده | فقط consume دوباره تلاش می‌شود تا قفل
+          // سرور قبلاً ثبتش کرده | فقط consume دوباره تلاش میشود تا قفل
           // بازار باز شود؛ verify تکراری حذف شد تا شمارش دوباره انجام نشود.
           final bool consumed = await _consume(rec.token);
           if (consumed) {
             queue.remove(rec.token);
+            removedTokens.add(rec.token);
           }
           rec.attempts += 1;
           changed = true;
@@ -322,12 +358,16 @@ class BazaarPayments {
         }
         final _VerifyOutcome outcome = await _verifyPurchase(rec);
         if (outcome.credited) {
-          // فقط وقتی consume تأیید شد رکورد پاک می‌شود؛ وگرنه برای بازکردن
-          // قفل بازار در اجرای بعدی می‌ماند.
+          // فقط وقتی consume تأیید شد رکورد پاک میشود؛ وگرنه برای بازکردن
+          // قفل بازار در اجرای بعدی میماند.
           rec.credited = true;
+          if (outcome.creditedOrderId > 0) {
+            rec.wcOrderId = outcome.creditedOrderId;
+          }
           final bool consumed = await _consume(rec.token);
           if (consumed) {
             queue.remove(rec.token);
+            removedTokens.add(rec.token);
           }
           rec.attempts += 1;
           changed = true;
@@ -341,7 +381,18 @@ class BazaarPayments {
         }
       }
       if (changed) {
-        await _saveQueue(queue);
+        // نوشتن صف از طریق mutex | حذفهای این دور هم روی وضعیت دیسک اعمال
+        // میشود تا نوشتن همزمان _queue بازنویسی نشود.
+        await _withQueueMutex(() async {
+          final Map<String, PendingBazaarPurchase> disk = await _loadQueue();
+          for (final PendingBazaarPurchase rec in queue.values) {
+            disk[rec.token] = rec;
+          }
+          for (final String token in removedTokens) {
+            disk.remove(token);
+          }
+          await _saveQueue(disk);
+        });
       }
     } finally {
       _recoveryRunning = false;
@@ -393,15 +444,21 @@ class BazaarPayments {
       final Object? decoded = jsonDecode(body);
       final bool success =
           decoded is Map<String, dynamic> && decoded['success'] == true;
-      return _VerifyOutcome(credited: success, retryable: !success);
+      final int wcOrderId = decoded is Map<String, dynamic>
+          ? ((decoded['order_id'] as num?)?.toInt() ?? 0)
+          : 0;
+      return _VerifyOutcome(
+        credited: success,
+        retryable: !success,
+        creditedOrderId: wcOrderId,
+      );
     } catch (e) {
       debugPrint('bazaar: verify transport error $e');
       return const _VerifyOutcome(credited: false, retryable: true);
     }
   }
 
-  Future<Map<String, PendingBazaarPurchase>> _loadQueue() async {
-    final SharedPreferences prefs = await SharedPreferences.getInstance();
+  Future<Map<String, PendingBazaarPurchase>> _loadQueue() async {    final SharedPreferences prefs = await SharedPreferences.getInstance();
     final String? raw = prefs.getString(kPrefsPendingBazaarPurchases);
     if (raw == null || raw.isEmpty) {
       return <String, PendingBazaarPurchase>{};
@@ -445,8 +502,24 @@ class BazaarPayments {
   }
 
   Future<void> _queue(PendingBazaarPurchase rec) async {
+    // نوشتن از طریق mutex | با بازیابی همزمان رکورد یکدیگر بازنویسی نمیشود.
+    await _withQueueMutex(() async {
+      final Map<String, PendingBazaarPurchase> queue = await _loadQueue();
+      queue[rec.token] = rec;
+      await _saveQueue(queue);
+    });
+  }
+
+  /// تسویهٔ صریح توکن برای چکاوت نیتیو | recovery را صدا میزند و نتیجهٔ
+  /// ثبت سرور (و شناسهٔ سفارش ووکامرس) را برمیگرداند.
+  Future<BazaarSettlement> settleAndWait(String token) async {
+    await recoverPurchases();
     final Map<String, PendingBazaarPurchase> queue = await _loadQueue();
-    queue[rec.token] = rec;
-    await _saveQueue(queue);
+    final PendingBazaarPurchase? rec = queue[token];
+    if (rec == null) {
+      // مصرف و پاک شده | یعنی سرور ثبت کرده است.
+      return const BazaarSettlement(credited: true);
+    }
+    return BazaarSettlement(credited: rec.credited, orderId: rec.wcOrderId);
   }
 }

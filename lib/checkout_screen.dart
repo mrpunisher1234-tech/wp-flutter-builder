@@ -2,13 +2,16 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_poolakey/flutter_poolakey.dart' as poolakey;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'addresses_screen.dart' show Province, UserAddress, latinDigits, normalizePhone;
+import 'bazaar_payment.dart';
 import 'cart_screen.dart';
 import 'main.dart';
 import 'native_mode.dart';
+import 'payment_result_screen.dart';
 
 /// خطای API با پیام فارسی قابل نمایش | سرور پیام واقعی برمیگرداند.
 class WptfApiException implements Exception {
@@ -221,8 +224,97 @@ class _NativeCheckoutScreenState extends State<NativeCheckoutScreen> {
     }
   }
 
+  /// درگاه بازار | پرداخت درون‌برنامه‌ای با Poolakey | بدون مرورگر.  /// فقط سبد تک‌محصولی با SKU: قیمت SKU در پنل بازار تعیین میشود و جمع
+  /// چندمحصولی قابل نگاشت نیست | بقیهٔ مسیرها به درگاه بانکی می‌روند.
+  Future<void> _submitAndPayBazaar() async {
+    final List<CartItem> items = CartManager.instance.items;
+    if (items.length != 1) {
+      _notice('پرداخت درون‌برنامه‌ای بازار فقط برای سبد تک‌محصولی فعال است | سبد را تک‌کالایی کنید یا از درگاه آنلاین استفاده کنید');
+      return;
+    }
+    final String sku = items.first.item.sku.trim();
+    if (sku.isEmpty) {
+      _notice('این محصول SKU ندارد | SKU محصول را در ووکامرس تنظیم کنید');
+      return;
+    }
+    if (_submitting) {
+      return;
+    }
+    setState(() => _submitting = true);
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext dialogContext) => const Dialog(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        child: Padding(
+          padding: EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              CircularProgressIndicator(strokeWidth: 2.5),
+              SizedBox(height: 16),
+              Text('در حال اتصال به کافه‌بازار…', style: TextStyle(fontSize: 13)),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    try {
+      final poolakey.PurchaseInfo? info = await BazaarPayments.instance.purchase(sku);
+      if (!mounted) return;
+      if (info == null) {
+        Navigator.of(context).pop();
+        _notice('پرداخت انجام نشد یا لغو شد | خریدهای پرداخت‌شدهٔ قبلی بررسی می‌شوند');
+        return;
+      }
+      // تسویهٔ صریح | سرور توکن را با API بازار راستی‌آزمایی و سفارش را میسازد.
+      final BazaarSettlement settlement =
+          await BazaarPayments.instance.settleAndWait(info.purchaseToken);
+      if (!mounted) return;
+      Navigator.of(context).pop();
+      if (!settlement.credited) {
+        _notice('ثبت نهایی پرداخت انجام نشد | در باز شدن بعدی اپ خودکار بررسی می‌شود');
+        return;
+      }
+      CartManager.instance.clearCart();
+      final String scheme = widget.config.deepLinkScheme.trim().isEmpty
+          ? 'wptoflutter'
+          : widget.config.deepLinkScheme.trim();
+      Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (_) => PaymentResultScreen(
+            config: widget.config,
+            uri: Uri(
+              scheme: scheme,
+              host: 'payment-result',
+              queryParameters: <String, String>{
+                'status': 'success',
+                if (settlement.orderId > 0) 'order_id': '${settlement.orderId}',
+              },
+            ),
+          ),
+        ),
+      );
+    } catch (error) {
+      if (mounted) {
+        Navigator.of(context).pop();
+        _notice('خطا در ارتباط با کافه‌بازار');
+      }
+    }
+    if (mounted) {
+      setState(() => _submitting = false);
+    }
+  }
+
   /// ۱) ساخت سفارش رسمی ووکامرس | ۲) لینک درگاه | ۳) باز کردن مرورگر امن بانک.
   Future<void> _submitAndPay() async {
+    // درگاه بازار | مسیر پرداخت درون‌برنامه‌ای.
+    if (widget.config.paymentGateway == 'bazaar') {
+      await _submitAndPayBazaar();
+      return;
+    }
     if (!_formKey.currentState!.validate()) {
       return;
     }
@@ -459,7 +551,8 @@ class _NativeCheckoutScreenState extends State<NativeCheckoutScreen> {
               ),
 
               const SizedBox(height: 18),
-              if (widget.config.enableCoupons) ...<Widget>[
+              if (widget.config.enableCoupons &&
+                  widget.config.paymentGateway != 'bazaar') ...<Widget>[
                 _buildSectionTitle('کد تخفیف'),
                 const SizedBox(height: 10),
                 _buildCouponRow(),
@@ -651,7 +744,7 @@ class _NativeCheckoutScreenState extends State<NativeCheckoutScreen> {
       child: Column(
         children: <Widget>[
           _invoiceRow('جمع اقلام (${toPersianDigits('${CartManager.instance.totalCount}')} کالا)', formatToman('$_subtotal')),
-          if (_shipping > 0) ...<Widget>[
+          if (_shipping > 0 && widget.config.paymentGateway != 'bazaar') ...<Widget>[
             const SizedBox(height: 10),
             _invoiceRow('هزینه ارسال', formatToman('$_shipping')),
           ],

@@ -27,11 +27,8 @@ class NativeBanner {
 /// وجود این فایل یعنی اسپلش در فریم اول و بدون انتظار شبکه رسم میشود.
 const String kSplashLogoAssetPath = 'assets/splash_logo.png';
 
-/// درگاه پرداخت درون‌برنامه‌ای کافه‌بازار | باید false بماند تا اتصال به درگاه
-/// برقرار شود؛ اعتبارسنجی خرید سمت سرور با REST خود کافه‌بازار انجام می‌شود
-/// (lib/bazaar_payment.dart). کلید RSA فقط وقتی لازم است که مقدار بالا true باشد.
-const bool kUseLocalSignatureCheck = false;
-const String kBazaarRsaPublicKey = '';
+// تیک امضای محلی RSA بازار از تنظیم ۱۵ سرور میآید | اینجا ثابتی نیست؛
+// در main() از کش/کانفیگ خوانده میشود تا بدون بیلد مجدد قابل تغییر باشد.
 
 /// یک نشان اعتماد (اینماد، ساماندهی و...) | تصویر + لینک اختیاری.
 class AboutBadge {
@@ -87,6 +84,10 @@ class AppConfig {
     this.enableCoupons = true,
     this.defaultShippingCost = 0,
     this.deepLinkScheme = 'wptoflutter',
+    this.paymentGateway = 'zarinpal',
+    this.paymentSandbox = false,
+    this.bazaarUseLocalSignatureCheck = false,
+    this.bazaarRsaPublicKey = '',
   });
 
   final String appName;
@@ -132,6 +133,11 @@ class AppConfig {
   final int defaultShippingCost;
   // تنظیم ۱۴ | اسکیمای بازگشت پرداخت (دیپ‌لینک).
   final String deepLinkScheme;
+  // تنظیم ۱۵ | درگاه پرداخت + امضای محلی RSA بازار.
+  final String paymentGateway;
+  final bool paymentSandbox;
+  final bool bazaarUseLocalSignatureCheck;
+  final String bazaarRsaPublicKey;
 
   /// لوگوی نهایی اسپلش | اولویت حلشده سمت وردپرس، وگرنه:
   /// ۱. لوگوی اختصاصی اسپلش، ۲. آیکون سایت، ۳. آیکون رسمی اپ.
@@ -431,6 +437,10 @@ class AppConfig {
       enableCoupons: enableCoupons,
       defaultShippingCost: defaultShippingCost,
       deepLinkScheme: deepLinkScheme,
+      paymentGateway: paymentGateway,
+      paymentSandbox: paymentSandbox,
+      bazaarUseLocalSignatureCheck: bazaarUseLocalSignatureCheck,
+      bazaarRsaPublicKey: bazaarRsaPublicKey,
       // این دو مقدار در زمان بیلد تثبیت شدهاند و هرگز از راه دور بازنویسی نمیشوند.
       splashLogoBundledUrl: pickText(
         'logo_bundled_url',
@@ -455,6 +465,10 @@ class AppConfig {
       final Map<dynamic, dynamic> checkoutBlock =
           (decoded['checkout'] is Map)
               ? (decoded['checkout'] as Map).cast<dynamic, dynamic>()
+              : <dynamic, dynamic>{};
+      final Map<dynamic, dynamic> paymentBlock =
+          (decoded['payment'] is Map)
+              ? (decoded['payment'] as Map).cast<dynamic, dynamic>()
               : <dynamic, dynamic>{};
       final String remoteScheme =
           ((decoded['deep_link_scheme'] as String?) ?? '').trim();
@@ -513,6 +527,22 @@ class AppConfig {
                 defaultShippingCost,
         deepLinkScheme:
             remoteScheme.isEmpty ? deepLinkScheme : remoteScheme,
+        // تنظیم ۱۵ | درگاه پرداخت + تیک امضای محلی RSA بازار.
+        paymentGateway: ((paymentBlock['gateway'] as String?) ?? paymentGateway)
+                .trim()
+                .isEmpty
+            ? paymentGateway
+            : ((paymentBlock['gateway'] as String?) ?? paymentGateway).trim(),
+        paymentSandbox: paymentBlock['sandbox'] == null
+            ? paymentSandbox
+            : paymentBlock['sandbox'] == true,
+        bazaarUseLocalSignatureCheck:
+            paymentBlock['use_local_signature_check'] == null
+                ? bazaarUseLocalSignatureCheck
+                : paymentBlock['use_local_signature_check'] == true,
+        bazaarRsaPublicKey: paymentBlock['rsa_public_key'] == null
+            ? bazaarRsaPublicKey
+            : ((paymentBlock['rsa_public_key'] as String?) ?? '').trim(),
         // مقادیر اسپلش عیناً منتقل میشوند تا اگر پاسخ سرور ناقص بود، مقدار فعلی از دست نرود.
         splashImageUrl: splashImageUrl,
         splashLogoUrl: splashLogoUrl,
@@ -547,6 +577,9 @@ class AppConfig {
       await prefs.setString('wptf_splash_bg', splashBackgroundHex);
       await prefs.setString('wptf_splash_text', splashText);
       await prefs.setString('wptf_splash_text_color', splashTextHex);
+      // تیک امضای محلی RSA بازار | کش میشود تا در لانچ بعدی قبل از کانفیگ تازه اعمال شود.
+      await prefs.setBool('wptf_bazaar_local_check', bazaarUseLocalSignatureCheck);
+      await prefs.setString('wptf_bazaar_rsa_key', bazaarRsaPublicKey);
     } catch (_) {}
   }
 
@@ -573,13 +606,24 @@ class AppConfig {
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   final AppConfig config = await AppConfig.load();
-  // درگاه پرداخت درون‌برنامه‌ای کافه‌بازار | فقط روی اندروید وصل می‌شود؛
-  // چون kUseLocalSignatureCheck برابر false است، کلید RSA پاس داده نمی‌شود.
+  // درگاه پرداخت درون‌برنامه‌ای کافه‌بازار | فقط روی اندروید وصل میشود.
+  // تیک امضای محلی RSA از تنظیم ۱۵ میآید | کش قبلی تا رسیدن کانفیگ تازه معتبر است.
+  final SharedPreferences prefs = await SharedPreferences.getInstance();
+  final bool cachedLocalCheck = prefs.getBool('wptf_bazaar_local_check') ?? false;
+  final String cachedRsaKey = prefs.getString('wptf_bazaar_rsa_key') ?? '';
+  final String? rsaKey;
+  if (cachedLocalCheck && cachedRsaKey.isNotEmpty) {
+    rsaKey = cachedRsaKey;
+  } else if (config.bazaarUseLocalSignatureCheck &&
+      config.bazaarRsaPublicKey.isNotEmpty) {
+    rsaKey = config.bazaarRsaPublicKey;
+  } else {
+    // null یعنی بررسی امضای محلی خاموش | اعتبارسنجی سمت سرور انجام میشود.
+    rsaKey = null;
+  }
   BazaarPayments.instance.init(
     apiBase: config.effectiveApiBaseUrl,
-    rsaKey: kUseLocalSignatureCheck && kBazaarRsaPublicKey.isNotEmpty
-        ? kBazaarRsaPublicKey
-        : null,
+    rsaKey: rsaKey,
   );
   runApp(WpToFlutterApp(config: config));
 }
@@ -639,7 +683,7 @@ class _SplashGate extends StatefulWidget {
 }
 
 class _SplashGateState extends State<_SplashGate>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   /// حداقل زمان نمایش اسپلش | تا انیمیشن برند و لوگو دیده شود.
   static const Duration _minimumSplash = Duration(milliseconds: 2000);
 
@@ -663,6 +707,7 @@ class _SplashGateState extends State<_SplashGate>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _current = widget.config;
 
     // نسخه نیتیو سیگنال «آماده شد» ندارد و محتوایش از ابتدا هست، پس فقط حداقل زمان.
@@ -780,8 +825,22 @@ class _SplashGateState extends State<_SplashGate>
     } catch (_) {}
   }
 
+  /// بازگشت به اپ از دیالوگ پرداخت بازار | اتصال و بازیابی خریدهای مصرفنشده.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) {
+      return;
+    }
+    if (BazaarPayments.instance.state == BazaarState.connected) {
+      BazaarPayments.instance.recoverPurchases();
+    } else {
+      BazaarPayments.instance.connect();
+    }
+  }
+
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _minimumTimer?.cancel();
     _ceilingTimer?.cancel();
     _linkSub?.cancel();

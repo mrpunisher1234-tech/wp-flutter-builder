@@ -2,6 +2,8 @@ allprojects {
     repositories {
         google()
         mavenCentral()
+        // Poolakey (پرداخت درونبرنامهای بازار) فقط از JitPack سرو میشود.
+        maven { url = uri("https://jitpack.io") }
     }
 }
 
