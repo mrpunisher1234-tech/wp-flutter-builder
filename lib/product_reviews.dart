@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'main.dart';
+import 'api_page.dart';
 import 'native_mode.dart';
 import 'skeleton.dart';
 
@@ -112,10 +113,8 @@ class _ProductReviewsSectionState extends State<ProductReviewsSection> {
           'per_page': '$_pageSize',
         },
       );
-      final HttpClient client = HttpClient();
-      final HttpClientRequest request = await client.getUrl(uri);
-      final HttpClientResponse response = await request.close();
-      final String body = await response.transform(utf8.decoder).join();
+      final ApiPage response = await fetchApiPage(uri);
+      final String body = response.body;
       if (!mounted) return;
       if (response.statusCode != 200) {
         setState(() {
@@ -171,11 +170,14 @@ class _ProductReviewsSectionState extends State<ProductReviewsSection> {
     // و دیدگاهش را مستقیم منتشر می‌کند (قانون کارت ۸).
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     final String? token = prefs.getString('wptf_auth_token');
+    if (!mounted) return;
+    HttpClient? client;
     try {
       final Uri uri = Uri.parse('${widget.config.effectiveApiBaseUrl}reviews');
-      final HttpClient client = HttpClient()
-        ..connectionTimeout = const Duration(seconds: 5);
-      final HttpClientRequest request = await client.postUrl(uri);
+      client = HttpClient()
+        ..connectionTimeout = const Duration(seconds: 10);
+      final HttpClientRequest request = await client.postUrl(uri)
+          .timeout(const Duration(seconds: 15));
       request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
       request.add(
         utf8.encode(
@@ -188,8 +190,11 @@ class _ProductReviewsSectionState extends State<ProductReviewsSection> {
           }),
         ),
       );
-      final HttpClientResponse response = await request.close();
-      final String body = await response.transform(utf8.decoder).join();
+      final HttpClientResponse response = await request.close().timeout(
+        const Duration(seconds: 15),
+      );
+      final String body = await response.transform(utf8.decoder).join()
+          .timeout(const Duration(seconds: 15));
       if (!mounted) return;
       if (response.statusCode != 200) {
         final dynamic decodedError = jsonDecode(body);
@@ -226,6 +231,8 @@ class _ProductReviewsSectionState extends State<ProductReviewsSection> {
           duration: Duration(seconds: 2),
         ),
       );
+    } finally {
+      client?.close(force: true);
     }
   }
 

@@ -164,6 +164,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         await prefs.setString('wptf_auth_token', (data['token'] ?? '').toString());
         await prefs.setString('wptf_user_phone', (user['phone'] ?? '').toString());
         await prefs.setString('wptf_user_name', (user['name'] ?? '').toString());
+        if (!mounted) return;
         setState(() {
           _isLoggedIn = true;
           _userPhone = (user['phone'] ?? '').toString();
@@ -193,6 +194,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     await prefs.remove('wptf_auth_token');
     await prefs.remove('wptf_user_phone');
     await prefs.remove('wptf_user_name');
+    if (!mounted) return;
     setState(() {
       _isLoggedIn = false;
       _step = 1;

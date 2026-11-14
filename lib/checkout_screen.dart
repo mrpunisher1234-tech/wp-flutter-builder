@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'addresses_screen.dart' show Province, UserAddress, latinDigits, normalizePhone;
 import 'bazaar_payment.dart';
+import 'bank_payment.dart';
 import 'cart_screen.dart';
 import 'main.dart';
 import 'native_mode.dart';
@@ -52,7 +53,8 @@ class _NativeCheckoutScreenState extends State<NativeCheckoutScreen> {
   int _discountAmount = 0;
   // سفارش ناتمام همین نشست | اگر درخواست پرداخت شکست بخورد، تلاش بعدی
   // سفارش pending تکراری نمی‌سازد و همان سفارش را دوباره استفاده می‌کند.
-  int? _pendingOrderId;
+  PendingBankOrder? _pendingOrder;
+  int? _serverTotal;
 
   @override
   void initState() {
@@ -77,131 +79,146 @@ class _NativeCheckoutScreenState extends State<NativeCheckoutScreen> {
   Future<void> _prefill() async {
     try {
       final SharedPreferences prefs = await SharedPreferences.getInstance();
-      _name.text = prefs.getString('wptf_user_name') ?? '';
+      if (!mounted) return;
+      setState(() {
+        _name.text = prefs.getString('wptf_user_name') ?? '';
       _phone.text = prefs.getString('wptf_user_phone') ?? '';
+      });
 
       final String? token = prefs.getString('wptf_auth_token');
-      if (token == null || token.isEmpty) {
-        return;
-      }
-
       HttpClient? client;
       try {
         client = HttpClient()..connectionTimeout = const Duration(seconds: 6);
-        final HttpClientRequest request = await client.postUrl(
-          Uri.parse('${widget.config.effectiveApiBaseUrl}addresses'),
+        final bool loggedIn = token != null && token.isNotEmpty;
+        final Uri uri = Uri.parse(
+          '${widget.config.effectiveApiBaseUrl}${loggedIn ? 'addresses' : 'checkout/provinces'}',
+        );
+        final HttpClientRequest request = await (loggedIn ? client.postUrl(uri) : client.getUrl(uri))
+            .timeout(const Duration(seconds: 15),
         );
         request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
-        request.write(jsonEncode(<String, dynamic>{'auth_token': token}));
-        final HttpClientResponse response = await request.close();
-        final String raw = await response.transform(utf8.decoder).join();
+        if (loggedIn) {
+          request.write(jsonEncode(<String, dynamic>{'auth_token': token}));
+        }
+        final HttpClientResponse response = await request.close().timeout(
+          const Duration(seconds: 15),
+        );
+        final String raw = await response.transform(utf8.decoder).join()
+            .timeout(const Duration(seconds: 15));
         final dynamic decoded = jsonDecode(raw);
         if (decoded is! Map<String, dynamic> || !mounted) return;
 
         final List<dynamic> provinces =
             decoded['provinces'] is List ? decoded['provinces'] as List<dynamic> : const <dynamic>[];
-        _provinces
-          ..clear()
-          ..addAll(provinces
-              .whereType<Map<String, dynamic>>()
-              .map(Province.fromMap));
-
-        final List<dynamic> items =
-            decoded['items'] is List ? decoded['items'] as List<dynamic> : const <dynamic>[];
-        UserAddress? defaultAddress;
-        for (final dynamic row in items) {
-          if (row is Map<String, dynamic> && row['is_default'] == true) {
-            defaultAddress = UserAddress.fromMap(row);
-            break;
-          }
-        }
-        defaultAddress ??= items.isNotEmpty && items.first is Map<String, dynamic>
-            ? UserAddress.fromMap(items.first as Map<String, dynamic>)
-            : null;
-
-        if (defaultAddress != null) {
-          _city.text = defaultAddress.city;
-          _address.text = defaultAddress.address1;
-          _postcode.text = defaultAddress.postcode;
-          if (_name.text.trim().isEmpty) {
-            _name.text = defaultAddress.fullName;
-          }
-          if (_phone.text.trim().isEmpty) {
-            _phone.text = defaultAddress.phone;
-          }
-          final bool knownState = _provinces
-              .any((Province province) => province.code == defaultAddress!.state);
-          if (knownState) {
-            _stateCode = defaultAddress.state;
-          }
-        }
-      } finally {
-        client?.close(force: true);
-      }
-    } catch (_) {
-      // پیش‌پر کردن اختیاری است | خطا فرم را نمیبندد.
-    }
-  }
-
-  /// جمع اقلام با قیمت حراج | همان منطق سبد خرید.
-  int get _subtotal => CartManager.instance.totalPrice;
-
-  /// هزینه ارسال از تنظیم ۱۴ | صفر یعنی ارسال رایگان.
-  int get _shipping => widget.config.defaultShippingCost;
-
-  int get _total {
-    final int value = _subtotal + _shipping - _discountAmount;
-    return value > 0 ? value : 0;
-  }
-
-  void _notice(String message) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(message, style: const TextStyle(color: Colors.white)),
-        backgroundColor: Colors.black,
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 3),
-      ),
-    );
-  }
-
-  /// بررسی زندهٔ کد تخفیف | فاکتور بدون رفرش فرم بهروز میشود.
-  Future<void> _applyCoupon() async {
-    final String code = _coupon.text.trim();
-    if (code.isEmpty) {
-      _notice('کد تخفیف را وارد کنید');
-      return;
-    }
-    setState(() => _applyingCoupon = true);
-    HttpClient? client;
-    try {
-      client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
-      final HttpClientRequest request = await client.postUrl(
-        Uri.parse('${widget.config.effectiveApiBaseUrl}checkout/apply-coupon'),
-      );
-      request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
-      request.write(jsonEncode(<String, dynamic>{
-        'coupon_code': code,
-        'subtotal': _subtotal,
-        'items': <Map<String, dynamic>>[
-          for (final CartItem cartItem in CartManager.instance.items)
-            <String, dynamic>{
-              'product_id': cartItem.item.id,
-              'quantity': cartItem.quantity,
-            },
-        ],
-      }));
-      final HttpClientResponse response = await request.close();
-      final String raw = await response.transform(utf8.decoder).join();
-      final dynamic decoded = jsonDecode(raw);
-      if (!mounted) return;
-      if (response.statusCode == 200 &&
-          decoded is Map<String, dynamic> &&
-          decoded['valid'] == true) {
         setState(() {
-          _appliedCode = code;
-          _discountAmount = (decoded['discount_amount'] as num?)?.toInt() ?? 0;
+          _provinces
+            ..clear()
+            ..addAll(provinces
+                .whereType<Map<String, dynamic>>()
+                .map(Province.fromMap));
+
+          final List<dynamic> items =
+              decoded['items'] is List ? decoded['items'] as List<dynamic> : const <dynamic>[];
+          UserAddress? defaultAddress;
+          for (final dynamic row in items) {
+            if (row is Map<String, dynamic> && row['is_default'] == true) {
+              defaultAddress = UserAddress.fromMap(row);
+              break;
+            }
+          }
+          defaultAddress ??= items.isNotEmpty && items.first is Map<String, dynamic>
+              ? UserAddress.fromMap(items.first as Map<String, dynamic>)
+              : null;
+
+          if (defaultAddress != null) {
+            _city.text = defaultAddress.city;
+            _address.text = defaultAddress.address1;
+            _postcode.text = defaultAddress.postcode;
+            if (_name.text.trim().isEmpty) {
+              _name.text = defaultAddress.fullName;
+            }
+            if (_phone.text.trim().isEmpty) {
+              _phone.text = defaultAddress.phone;
+            }
+            final bool knownState = _provinces
+                .any((Province province) => province.code == defaultAddress!.state);
+            if (knownState) {
+              _stateCode = defaultAddress.state;
+            }
+          }
+        });
+        } finally {
+          client?.close(force: true);
+        }
+      } catch (_) {
+        // پیش‌پر کردن اختیاری است | خطا فرم را نمیبندد.
+      }
+    }
+
+    /// جمع اقلام با قیمت حراج | همان منطق سبد خرید.
+    int get _subtotal => CartManager.instance.totalPrice;
+
+    /// هزینه ارسال از تنظیم ۱۴ | صفر یعنی ارسال رایگان.
+    int get _shipping => widget.config.defaultShippingCost;
+
+    int get _total {
+      if (_serverTotal != null) return _serverTotal!;
+      final int value = _subtotal + _shipping - _discountAmount;
+      return value > 0 ? value : 0;
+    }
+
+    void _notice(String message) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message, style: const TextStyle(color: Colors.white)),
+          backgroundColor: Colors.black,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
+
+    /// بررسی زندهٔ کد تخفیف | فاکتور بدون رفرش فرم بهروز میشود.
+    Future<void> _applyCoupon() async {
+      final String code = _coupon.text.trim();
+      if (code.isEmpty) {
+        _notice('کد تخفیف را وارد کنید');
+        return;
+      }
+      setState(() => _applyingCoupon = true);
+      HttpClient? client;
+      try {
+        client = HttpClient()..connectionTimeout = const Duration(seconds: 8);
+        final HttpClientRequest request = await client.postUrl(
+          Uri.parse('${widget.config.effectiveApiBaseUrl}checkout/apply-coupon'),
+        )
+            .timeout(const Duration(seconds: 15));
+        request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
+        request.write(jsonEncode(<String, dynamic>{
+          'coupon_code': code,
+          'subtotal': _subtotal,
+          'items': <Map<String, dynamic>>[
+            for (final CartItem cartItem in CartManager.instance.items)
+              <String, dynamic>{
+                'product_id': cartItem.item.id,
+                'quantity': cartItem.quantity,
+              },
+          ],
+        }));
+        final HttpClientResponse response = await request.close().timeout(
+          const Duration(seconds: 15),
+        );
+        final String raw = await response.transform(utf8.decoder).join()
+            .timeout(const Duration(seconds: 15));
+        final dynamic decoded = jsonDecode(raw);
+        if (!mounted) return;
+        if (response.statusCode == 200 &&
+            decoded is Map<String, dynamic> &&
+            decoded['valid'] == true) {
+          setState(() {
+            _appliedCode = code;
+            _discountAmount = (decoded['discount_amount'] as num?)?.toInt() ?? 0;
         });
         _notice((decoded['message'] as String?) ?? 'کد تخفیف اعمال شد');
       } else {
@@ -264,7 +281,8 @@ class _NativeCheckoutScreenState extends State<NativeCheckoutScreen> {
     try {
       final poolakey.PurchaseInfo? info = await BazaarPayments.instance.purchase(sku);
       if (!mounted) return;
-      if (info == null) {
+      if (info == null ||
+          info.purchaseState != poolakey.PurchaseState.PURCHASED) {
         Navigator.of(context).pop();
         _notice('پرداخت انجام نشد یا لغو شد | خریدهای پرداخت‌شدهٔ قبلی بررسی می‌شوند');
         return;
@@ -302,26 +320,26 @@ class _NativeCheckoutScreenState extends State<NativeCheckoutScreen> {
         Navigator.of(context).pop();
         _notice('خطا در ارتباط با کافه‌بازار');
       }
-    }
-    if (mounted) {
+    } finally {
+      if (mounted) {
       setState(() => _submitting = false);
     }
+  }
   }
 
   /// ۱) ساخت سفارش رسمی ووکامرس | ۲) لینک درگاه | ۳) باز کردن مرورگر امن بانک.
   Future<void> _submitAndPay() async {
+    if (_submitting) return;
     // درگاه بازار | مسیر پرداخت درون‌برنامه‌ای.
     if (widget.config.paymentGateway == 'bazaar') {
       await _submitAndPayBazaar();
-      return;
-    }
-    if (!_formKey.currentState!.validate()) {
       return;
     }
     if (_submitting) {
       return;
     }
     setState(() => _submitting = true);
+    BankPayments.instance.checkoutBusy = true;
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -354,19 +372,72 @@ class _NativeCheckoutScreenState extends State<NativeCheckoutScreen> {
       client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
 
       // ۱) ساخت سفارش | قیمتها و موجودی از خود ووکامرس خوانده میشود.
-      final int orderId = _pendingOrderId ?? await _createOrder(client, token);
-      _pendingOrderId = orderId;
+      _pendingOrder ??= await BankPayments.instance.load(
+        widget.config.effectiveApiBaseUrl,
+      );
+
+      if (_pendingOrder != null) {
+        final BankOrderStatus? status = await BankPayments.instance.reconcile(
+          widget.config.effectiveApiBaseUrl,
+        );
+        if (status?.paid == true) {
+        dialogOpen = false;
+        navigator.pop();
+          await _showBankSuccess(status!.order, status.refId);
+          return;
+        }
+      } else {
+        if (!mounted || !_formKey.currentState!.validate()) return;
+        _pendingOrder = await _createOrder(client, token);
+      }
+      final PendingBankOrder order = _pendingOrder!;
+      await BankPayments.instance.save(
+        widget.config.effectiveApiBaseUrl,
+        order,
+      );
+      if (!mounted) return;
+      setState(() => _serverTotal = order.total);
+      dialogOpen = false;
+      navigator.pop();
+      final bool? confirmed = await showDialog<bool>(
+        context: context,
+        builder: (BuildContext dialogContext) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: AlertDialog(
+            title: const Text('تأیید پرداخت سفارش'),
+            content: Text(
+              '${order.couponError.isEmpty ? '' : '${order.couponError}\n\n'}سفارش شماره ${toPersianDigits('${order.id}')}\nمبلغ نهایی سایت: ${formatToman('${order.total}')}',
+            ),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(false),
+                child: const Text('فعلاً نه'),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(dialogContext).pop(true),
+                child: const Text('ادامه پرداخت'),
+              ),
+            ],
+          ),
+        ),
+      );
+      if (confirmed != true || !mounted) return;
 
       // ۲) لینک درگاه | زرین‌پال StartPay.
-      final String paymentUrl = await _requestPayment(client, orderId, token);
-
-      if (dialogOpen) {
-        dialogOpen = false;
-        navigator.pop(); // بستن لودینگ
+      final Map<String, dynamic> payment = await _requestPayment(
+        client,
+        order,
+        token,
+      );
+      if (payment['already_paid'] == true) {
+        await _showBankSuccess(order, (payment['ref_id'] ?? '').toString());
+        return;
       }
+      final String paymentUrl = payment['payment_url'] as String;
 
       // ۳) صفحه امن بانک در مرورگر گوشی | بعد از پرداخت دیپ‌لینک به اپ برمیگردد.
       final Uri gatewayUri = Uri.parse(paymentUrl);
+      BankPayments.instance.checkoutBusy = false;
       if (await canLaunchUrl(gatewayUri)) {
         await launchUrl(gatewayUri, mode: LaunchMode.externalApplication);
       } else {
@@ -390,6 +461,8 @@ class _NativeCheckoutScreenState extends State<NativeCheckoutScreen> {
         _notice('خطا در ارتباط با سایت');
       }
     } finally {
+      if (dialogOpen && navigator.mounted) navigator.pop();
+      BankPayments.instance.checkoutBusy = false;
       client?.close(force: true);
       if (mounted) {
         setState(() => _submitting = false);
@@ -397,9 +470,38 @@ class _NativeCheckoutScreenState extends State<NativeCheckoutScreen> {
     }
   }
 
-  Future<int> _createOrder(HttpClient client, String token) async {
+  Future<void> _showBankSuccess(PendingBankOrder order, String refId) async {
+    final bool show = await BankPayments.instance.complete(
+      widget.config.effectiveApiBaseUrl,
+      order.id,
+    );
+    if (!show) return;
+    CartManager.instance.clearCart();
+    if (!mounted) return;
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => PaymentResultScreen(
+          config: widget.config,
+          uri: Uri(
+            scheme: widget.config.deepLinkScheme,
+            host: 'payment-result',
+            queryParameters: <String, String>{
+              'status': 'success',
+              'order_id': '${order.id}',
+              'ref_id': refId,
+            },
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<PendingBankOrder> _createOrder(HttpClient client, String token) async {
     final HttpClientRequest request = await client.postUrl(
-      Uri.parse('${widget.config.effectiveApiBaseUrl}checkout/create-order'),
+      Uri.parse('${widget.config.effectiveApiBaseUrl}checkout/create-order',
+          ),
+        )
+        .timeout(const Duration(seconds: 15),
     );
     request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
     request.write(jsonEncode(<String, dynamic>{
@@ -421,8 +523,11 @@ class _NativeCheckoutScreenState extends State<NativeCheckoutScreen> {
           },
       ],
     }));
-    final HttpClientResponse response = await request.close();
-    final String raw = await response.transform(utf8.decoder).join();
+    final HttpClientResponse response = await request.close().timeout(
+      const Duration(seconds: 15),
+    );
+    final String raw = await response.transform(utf8.decoder).join()
+        .timeout(const Duration(seconds: 15));
     final dynamic decoded = jsonDecode(raw);
     if (response.statusCode != 200 ||
         decoded is! Map<String, dynamic> ||
@@ -434,32 +539,41 @@ class _NativeCheckoutScreenState extends State<NativeCheckoutScreen> {
             : 'ثبت سفارش ناموفق بود | دوباره تلاش کنید',
       );
     }
-    return (decoded['order_id'] as num).toInt();
+    return PendingBankOrder.fromMap(decoded);
   }
 
-  Future<String> _requestPayment(HttpClient client, int orderId, String token) async {
+  Future<Map<String, dynamic>> _requestPayment(HttpClient client,
+    PendingBankOrder order, String token) async {
     final HttpClientRequest request = await client.postUrl(
       Uri.parse('${widget.config.effectiveApiBaseUrl}payment/request'),
+        )
+        .timeout(const Duration(seconds: 15),
     );
     request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
     request.write(jsonEncode(<String, dynamic>{
       if (token.isNotEmpty) 'auth_token': token,
-      'order_id': orderId,
-    }));
-    final HttpClientResponse response = await request.close();
-    final String raw = await response.transform(utf8.decoder).join();
+      'order_id': order.id,
+        'order_key': order.key,
+      }));
+    final HttpClientResponse response = await request.close().timeout(
+      const Duration(seconds: 15),
+    );
+    final String raw = await response.transform(utf8.decoder).join()
+        .timeout(const Duration(seconds: 15));
     final dynamic decoded = jsonDecode(raw);
     if (response.statusCode != 200 ||
         decoded is! Map<String, dynamic> ||
         decoded['success'] != true ||
-        (decoded['payment_url'] as String?) == null) {
+        (decoded['already_paid'] != true &&
+            (decoded['payment_url'] is! String ||
+                (decoded['payment_url'] as String).isEmpty))) {
       throw WptfApiException(
         decoded is Map<String, dynamic> && decoded['message'] is String
             ? decoded['message'] as String
             : 'اتصال به درگاه ناموفق بود',
       );
     }
-    return decoded['payment_url'] as String;
+    return decoded;
   }
 
   @override

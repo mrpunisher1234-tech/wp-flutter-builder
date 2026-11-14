@@ -8,6 +8,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 
 import 'cart_screen.dart';
 import 'categories_screen.dart';
+import 'api_page.dart';
 import 'main.dart';
 import 'product_reviews.dart';
 import 'profile_screen.dart';
@@ -299,13 +300,11 @@ class _NativeHomeScreenState extends State<NativeHomeScreen> {
         },
       );
 
-      final HttpClient client = HttpClient();
-      final HttpClientRequest request = await client.getUrl(uri);
-      final HttpClientResponse response = await request.close();
+      final ApiPage response = await fetchApiPage(uri);
       if (!mounted) return;
 
       if (response.statusCode == 200) {
-        final String body = await response.transform(utf8.decoder).join();
+        final String body = response.body;
         final List<dynamic> list = jsonDecode(body) as List<dynamic>;
         final List<WpItem> fetched = list
             .whereType<Map<String, dynamic>>()
@@ -315,7 +314,7 @@ class _NativeHomeScreenState extends State<NativeHomeScreen> {
         setState(() {
           _items = loadMore ? <WpItem>[..._items, ...fetched] : fetched;
           _productsPage = page;
-          _hasMoreProducts = fetched.length >= _homePageSize;
+          _hasMoreProducts = response.hasNextPage(page);
           _isLoading = false;
           _loadingMoreProducts = false;
         });
@@ -354,11 +353,9 @@ class _NativeHomeScreenState extends State<NativeHomeScreen> {
         '${widget.config.effectiveApiBaseUrl}categories?per_page=30'
         '&taxonomy=product_cat&orderby=count&order=DESC',
       );
-      final HttpClient client = HttpClient();
-      final HttpClientRequest request = await client.getUrl(uri);
-      final HttpClientResponse response = await request.close();
+      final ApiPage response = await fetchApiPage(uri);
       if (response.statusCode == 200) {
-        final String body = await response.transform(utf8.decoder).join();
+        final String body = response.body;
         final List<dynamic> list = jsonDecode(body) as List<dynamic>;
         if (!mounted) return;
         setState(() {
@@ -384,15 +381,11 @@ class _NativeHomeScreenState extends State<NativeHomeScreen> {
   /// مثل محصولات، هر بار باز شدن صفحه تازه باشند و از ریس تایم‌اوت
   /// استارتاپ خارج باشند. خطا = اسلایدر مخفی، بقیه اپ سالم.
   Future<void> _fetchBanners() async {
-    HttpClient? client;
     try {
-      client = HttpClient()
-        ..connectionTimeout = const Duration(seconds: 3);
-      final HttpClientRequest request = await client
-          .getUrl(Uri.parse('${widget.config.effectiveApiBaseUrl}config'));
-      final HttpClientResponse response = await request.close();
+      final ApiPage response = await fetchApiPage(Uri.parse('${widget.config.effectiveApiBaseUrl}config'),
+      );
       if (response.statusCode == 200) {
-        final String body = await response.transform(utf8.decoder).join();
+        final String body = response.body;
         final dynamic decoded = jsonDecode(body);
         if (decoded is Map<String, dynamic> && mounted) {
           setState(() {
@@ -424,7 +417,6 @@ class _NativeHomeScreenState extends State<NativeHomeScreen> {
       if (mounted) {
         setState(() => _loadingBanners = false);
       }
-      client?.close(force: true);
     }
   }
 
@@ -490,9 +482,7 @@ class _NativeHomeScreenState extends State<NativeHomeScreen> {
           'page': '$page',
         },
       );
-      final HttpClient client = HttpClient();
-      final HttpClientRequest request = await client.getUrl(uri);
-      final HttpClientResponse response = await request.close();
+      final ApiPage response = await fetchApiPage(uri);
       if (!mounted) return;
       if (response.statusCode != 200) {
         setState(() {
@@ -502,7 +492,7 @@ class _NativeHomeScreenState extends State<NativeHomeScreen> {
         });
         return;
       }
-      final String body = await response.transform(utf8.decoder).join();
+      final String body = response.body;
       final List<dynamic> list = jsonDecode(body) as List<dynamic>;
       final List<WpItem> fetched = list
           .whereType<Map<String, dynamic>>()
@@ -513,7 +503,7 @@ class _NativeHomeScreenState extends State<NativeHomeScreen> {
         _categoryItems =
             loadMore ? <WpItem>[..._categoryItems, ...fetched] : fetched;
         _categoryPage = page;
-        _hasMoreCategoryItems = fetched.length >= _homePageSize;
+        _hasMoreCategoryItems = response.hasNextPage(page);
         _loadingCategoryItems = false;
         _loadingMoreCategoryItems = false;
       });
@@ -1953,7 +1943,6 @@ class _NativeSearchScreenState extends State<NativeSearchScreen> {
     }
     setState(() {
       _results = fetched;
-      _hasMoreResults = fetched.length >= _searchPageSize;
       _searching = false;
     });
   }
@@ -1983,7 +1972,6 @@ class _NativeSearchScreenState extends State<NativeSearchScreen> {
     setState(() {
       _results = <WpItem>[...?_results, ...fetched];
       _resultsPage++;
-      _hasMoreResults = fetched.length >= _searchPageSize;
       _loadingMoreResults = false;
     });
   }
@@ -2006,9 +1994,7 @@ class _NativeSearchScreenState extends State<NativeSearchScreen> {
           'page': '$page',
         },
       );
-      final HttpClient client = HttpClient();
-      final HttpClientRequest request = await client.getUrl(uri);
-      final HttpClientResponse response = await request.close();
+      final ApiPage response = await fetchApiPage(uri);
       if (seq != _searchSeq || !mounted) return null;
       if (response.statusCode != 200) {
         if (showError) {
@@ -2016,9 +2002,10 @@ class _NativeSearchScreenState extends State<NativeSearchScreen> {
         }
         return null;
       }
-      final String body = await response.transform(utf8.decoder).join();
+      final String body = response.body;
       if (seq != _searchSeq || !mounted) return null;
       final List<dynamic> list = jsonDecode(body) as List<dynamic>;
+      _hasMoreResults = response.hasNextPage(page);
       return list
           .whereType<Map<String, dynamic>>()
           .map(WpItem.fromMap)

@@ -38,9 +38,13 @@ class CartManager extends ChangeNotifier {
   static const String _storageKey = 'wptf_persisted_cart';
 
   CartManager._() {
-    _loadFromPrefs(); // به محض باز شدن اپ، سبد خرید از حافظه خوانده می‌شود
+    _restoreFuture = _loadFromPrefs();
   }
 
+  late final Future<void> _restoreFuture;
+  bool _restored = false;
+  final List<VoidCallback> _pendingMutations = <VoidCallback>[];
+  Future<void> get ready => _restoreFuture;
   final List<CartItem> _items = <CartItem>[];
   List<CartItem> get items => List<CartItem>.unmodifiable(_items);
 
@@ -55,37 +59,42 @@ class CartManager extends ChangeNotifier {
       (totalRegularPrice - totalPrice) > 0 ? (totalRegularPrice - totalPrice) : 0;
 
   void addItem(WpItem item) {
-    final int index = _items.indexWhere((CartItem i) => i.item.id == item.id);
+    _changeCart(() {
+      final int index = _items.indexWhere((CartItem entry) => entry.item.id == item.id);
     if (index != -1) {
       _items[index].quantity++;
     } else {
       _items.add(CartItem(item: item, quantity: 1));
     }
-    _saveToPrefs();
-    notifyListeners();
+    });
   }
 
   void removeOne(WpItem item) {
-    final int index = _items.indexWhere((CartItem i) => i.item.id == item.id);
+    _changeCart(() {
+    final int index = _items.indexWhere((CartItem entry) => entry.item.id == item.id);
     if (index != -1) {
       if (_items[index].quantity > 1) {
         _items[index].quantity--;
       } else {
         _items.removeAt(index);
       }
-      _saveToPrefs();
-      notifyListeners();
-    }
+      }
+    });
   }
 
   void deleteItem(int itemId) {
-    _items.removeWhere((CartItem i) => i.item.id == itemId);
-    _saveToPrefs();
-    notifyListeners();
+    _changeCart(
+      () => _items.removeWhere((CartItem item) => item.item.id == itemId),
+    );
   }
 
   void clearCart() {
-    _items.clear();
+    _changeCart(_items.clear);
+  }
+
+  void _changeCart(VoidCallback mutation) {
+    if (!_restored) _pendingMutations.add(mutation);
+    mutation();
     _saveToPrefs();
     notifyListeners();
   }
@@ -96,6 +105,7 @@ class CartManager extends ChangeNotifier {
 
   Future<void> _saveToPrefs() async {
     try {
+      await _restoreFuture;
       final SharedPreferences prefs = await SharedPreferences.getInstance();
       final List<Map<String, dynamic>> rawList = _items
           .map((CartItem cartItem) => <String, dynamic>{
@@ -124,6 +134,7 @@ class CartManager extends ChangeNotifier {
   }
 
   Future<void> _loadFromPrefs() async {
+    final List<CartItem> restored = <CartItem>[];
     try {
       final SharedPreferences prefs = await SharedPreferences.getInstance();
       final String? jsonString = prefs.getString(_storageKey);
@@ -131,7 +142,6 @@ class CartManager extends ChangeNotifier {
       final dynamic decodedCart = jsonDecode(jsonString);
       final List<dynamic> decoded =
           decodedCart is List ? decodedCart : const <dynamic>[];
-      final List<CartItem> restored = <CartItem>[];
       for (final dynamic element in decoded) {
         if (element is! Map<String, dynamic>) continue;
         final Map<String, dynamic> itemMap =
@@ -142,13 +152,17 @@ class CartManager extends ChangeNotifier {
           CartItem(item: WpItem.fromMap(itemMap), quantity: quantity),
         );
       }
-      if (restored.isEmpty) return;
+    } catch (_) {
+    } finally {
       _items
         ..clear()
         ..addAll(restored);
+      _restored = true;
+      for (final VoidCallback mutation in _pendingMutations) {
+        mutation();
+      }
+      _pendingMutations.clear();
       notifyListeners();
-    } catch (_) {
-      // خطای خواندن | سبد خالی شروع می‌شود
     }
   }
 }

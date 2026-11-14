@@ -1,7 +1,7 @@
 import 'dart:convert';
-import 'dart:io';
-
 import 'package:flutter/material.dart';
+
+import 'api_page.dart';
 
 import 'main.dart';
 import 'native_mode.dart';
@@ -110,12 +110,10 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
           'order': 'DESC',
         },
       );
-      final HttpClient client = HttpClient();
-      final HttpClientRequest request = await client.getUrl(uri);
-      final HttpClientResponse response = await request.close();
+      final ApiPage response = await fetchApiPage(uri);
 
       if (response.statusCode == 200) {
-        final String body = await response.transform(utf8.decoder).join();
+        final String body = response.body;
         final List<dynamic> list = jsonDecode(body) as List<dynamic>;
 
         if (!mounted) return;
@@ -125,7 +123,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
             list.whereType<Map<String, dynamic>>().map(WpCategory.fromMap),
           );
           _page = 1;
-          _hasMore = list.length >= _pageSize;
+          _hasMore = response.hasNextPage(1);
           _isLoading = false;
           _refreshing = false;
         });
@@ -166,12 +164,10 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
           'order': 'DESC',
         },
       );
-      final HttpClient client = HttpClient();
-      final HttpClientRequest request = await client.getUrl(uri);
-      final HttpClientResponse response = await request.close();
+      final ApiPage response = await fetchApiPage(uri);
 
       if (response.statusCode == 200) {
-        final String body = await response.transform(utf8.decoder).join();
+        final String body = response.body;
         final List<dynamic> list = jsonDecode(body) as List<dynamic>;
 
         if (!mounted) return;
@@ -183,7 +179,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
               list.whereType<Map<String, dynamic>>().map(WpCategory.fromMap),
             );
             _page = nextPage;
-            _hasMore = list.length >= _pageSize;
+            _hasMore = response.hasNextPage(nextPage);
           }
           _isLoadingMore = false;
         });
@@ -364,7 +360,6 @@ class _CategoryItemCard extends StatelessWidget {
             ),
             const SizedBox(height: 4),
 
-            // ردیف پایین: تعداد کالا درشت (راست) + امتیاز ستاره‌ای (چپ)
             Row(
               children: <Widget>[
                 Expanded(
@@ -381,58 +376,11 @@ class _CategoryItemCard extends StatelessWidget {
                     ),
                   ),
                 ),
-                const SizedBox(width: 6),
-                _CategoryStars(count: categoryStars(category)),
               ],
             ),
           ],
         ),
       ),
-    );
-  }
-}
-
-/// امتیاز ستاره‌ای قطعی هر دسته از داده‌ی خود وردپرس | بدون هیچ تنظیمی:
-/// پایه از حجم محصول (۱ تا ۵) + تلورانس ±۱ از شناسه دسته تا یکنواخت نشود.
-/// همیشه برای هر دسته همان عدد تولید می‌شود.
-int categoryStars(WpCategory category) {
-  if (category.count <= 0) return 0;
-  final int base;
-  if (category.count >= 50) {
-    base = 5;
-  } else if (category.count >= 20) {
-    base = 4;
-  } else if (category.count >= 8) {
-    base = 3;
-  } else if (category.count >= 3) {
-    base = 2;
-  } else {
-    base = 1;
-  }
-  final int jitter = (category.id % 3) - 1; // -1، ۰ یا +۱
-  return (base + jitter).clamp(0, 5);
-}
-
-/// پنج ستاره | روشن‌ها طلایی (Dk.star)، خاموش‌ها خاکستری کم‌رنگ.
-class _CategoryStars extends StatelessWidget {
-  const _CategoryStars({required this.count});
-
-  final int count;
-
-  @override
-  Widget build(BuildContext context) {
-    // ردیف همیشه چپ‌به‌راست رندر می‌شود و از «راست» روشن می‌گیرد |
-    // یعنی پرشدن ستاره‌ها راست‌به‌چپ خوانده می‌شود (RTL).
-    return Row(
-      textDirection: TextDirection.ltr,
-      children: List<Widget>.generate(5, (int index) {
-        final bool lit = index >= 5 - count;
-        return Icon(
-          Icons.star_rounded,
-          size: 13,
-          color: lit ? Dk.star : Dk.text4.withValues(alpha: 0.4),
-        );
-      }),
     );
   }
 }
@@ -541,7 +489,6 @@ class _CategoryProductsScreenState extends State<CategoryProductsScreen> {
     if (fetched == null) return; // خطا نمایش داده شد
     setState(() {
       _items = fetched;
-      _hasMore = fetched.length >= _pageSize;
       _loading = false;
     });
     WidgetsBinding.instance.addPostFrameCallback((_) => _autoFillViewport());
@@ -563,7 +510,6 @@ class _CategoryProductsScreenState extends State<CategoryProductsScreen> {
     setState(() {
       _items = <WpItem>[..._items, ...fetched];
       _page++;
-      _hasMore = fetched.length >= _pageSize;
       _loadingMore = false;
     });
     WidgetsBinding.instance.addPostFrameCallback((_) => _autoFillViewport());
@@ -582,22 +528,31 @@ class _CategoryProductsScreenState extends State<CategoryProductsScreen> {
           'page': '$page',
         },
       );
-      final HttpClient client = HttpClient();
-      final HttpClientRequest request = await client.getUrl(uri);
-      final HttpClientResponse response = await request.close();
+      final ApiPage response = await fetchApiPage(uri);
+
+      if (!mounted) return null;
 
       if (response.statusCode != 200) {
-        setState(() => _error = 'خطا در بارگذاری محصولات');
+        setState(() {
+          _error = 'خطا در بارگذاری محصولات';
+          _loading = false;
+        });
         return null;
       }
-      final String body = await response.transform(utf8.decoder).join();
+      final String body = response.body;
       final List<dynamic> list = jsonDecode(body) as List<dynamic>;
+      if (!mounted) return null;
+      _hasMore = response.hasNextPage(page);
       return list
           .whereType<Map<String, dynamic>>()
           .map(WpItem.fromMap)
           .toList();
     } catch (_) {
-      setState(() => _error = 'خطا در اتصال به اینترنت');
+      if (!mounted) return null;
+      setState(() {
+        _error = 'خطا در اتصال به اینترنت';
+        _loading = false;
+      });
       return null;
     }
   }

@@ -340,7 +340,12 @@ class _OrdersScreenState extends State<OrdersScreen> {
             ..addAll(page);
           _page = 1;
         }
-        _hasMore = page.length >= _pageSize;
+        final int totalPages =
+            (decoded is Map<String, dynamic>
+                ? (decoded['pages'] as num?)?.toInt()
+                : null) ??
+            0;
+        _hasMore = _page < totalPages;
         _isLoading = false;
         _isLoadingMore = false;
       });

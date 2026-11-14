@@ -109,9 +109,10 @@ class BazaarPayments {
 
   String? _rsaKey;
   Uri? _verifyUrl;
+  Uri? _statusUrl;
   bool _connectInFlight = false;
   bool _purchaseInFlight = false;
-  bool _recoveryRunning = false;
+  Future<void>? _activeRecovery;
   HttpClient? _client;
 
   /// دنبالهٔ نوشتن صف | نوشتنهای همزمان (خرید در جریان + بازیابی) یکدیگر را
@@ -135,6 +136,7 @@ class BazaarPayments {
     final String base = apiBase.endsWith('/') ? apiBase : '$apiBase/';
     if (base.startsWith('http')) {
       _verifyUrl = Uri.parse('${base}payment/bazaar/verify');
+      _statusUrl = Uri.parse('${base}payment/bazaar/status');
     }
     if (available) {
       unawaited(connect());
@@ -268,14 +270,18 @@ class BazaarPayments {
 
   /// بازیابی خریدهای مصرف‌نشده | صف محلی + انبار خود کافه‌بازار.
   /// اول verify با سرور، بعد consume تا قفل محصول در بازار باز شود.
-  Future<void> recoverPurchases() async {
+  Future<void> recoverPurchases() {
+    final Future<void>? active = _activeRecovery;
+    if (active != null) return active;
     if (!available ||
-        _recoveryRunning ||
         state != BazaarState.connected ||
         _verifyUrl == null) {
-      return;
+      return Future<void>.value();
     }
-    _recoveryRunning = true;
+    return _activeRecovery = _recoverPurchases();
+  }
+
+  Future<void> _recoverPurchases() async {
     try {
       final Map<String, PendingBazaarPurchase> queue = await _loadQueue();
 
@@ -372,8 +378,25 @@ class BazaarPayments {
           rec.attempts += 1;
           changed = true;
         } else if (outcome.retryable) {
-          rec.attempts += 1;
+          // پاسخ verify گم شده ممکن است سرور ثبت کرده باشد | polling وضعیت تا نتیجهٔ نهایی.
+          final ({bool credited, int orderId}) polled =
+              await _pollStatusUntilFinal(rec);
+          if (polled.credited) {
+            rec.credited = true;
+            if (polled.orderId > 0) {
+              rec.wcOrderId = polled.orderId;
+            }
+            final bool consumed = await _consume(rec.token);
+            if (consumed) {
+              queue.remove(rec.token);
+              removedTokens.add(rec.token);
+            }
+            rec.attempts += 1;
           changed = true;
+          } else {
+            rec.attempts += 1;
+            changed = true;
+          }
         } else {
           // رد قطعی سرور | دوباره تلاش نکن.
           rec.attempts = kMaxBazaarVerifyAttempts;
@@ -395,7 +418,7 @@ class BazaarPayments {
         });
       }
     } finally {
-      _recoveryRunning = false;
+      _activeRecovery = null;
     }
   }
 
@@ -413,6 +436,66 @@ class BazaarPayments {
     }
   }
 
+  /// استعلام وضعیت از سرور | فقط جدول تراکنش میخواند | بدون تماس با API بازار.
+  Future<({bool credited, int orderId, String status})> _queryStatus(
+    PendingBazaarPurchase rec,
+  ) async {
+    final Uri? url = _statusUrl;
+    if (url == null) {
+      return (credited: false, orderId: 0, status: '');
+    }
+    try {
+      final HttpClient client = _client ??= HttpClient()
+        ..connectionTimeout = const Duration(seconds: 15);
+      final HttpClientRequest request = await client
+          .postUrl(url)
+          .timeout(const Duration(seconds: 15));
+      request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
+      request.write(jsonEncode(<String, dynamic>{'purchase_token': rec.token}));
+      final HttpClientResponse response = await request.close().timeout(
+        const Duration(seconds: 15),
+      );
+      final String body = await response
+          .transform(utf8.decoder)
+          .join()
+          .timeout(const Duration(seconds: 10));
+      if (response.statusCode != 200) {
+        return (credited: false, orderId: 0, status: '');
+      }
+      final Object? decoded = jsonDecode(body);
+      if (decoded is! Map<String, dynamic>) {
+        return (credited: false, orderId: 0, status: '');
+      }
+      return (
+        credited: decoded['credited'] == true,
+        orderId: (decoded['order_id'] as num?)?.toInt() ?? 0,
+        status: (decoded['status'] ?? '').toString(),
+      );
+    } catch (e) {
+      debugPrint('bazaar: status query error $e');
+      return (credited: false, orderId: 0, status: '');
+    }
+  }
+
+  /// polling وضعیت | پس از verify با پاسخ گمشده | تا ۳۰ ثانیه هر ۳ ثانیه
+  /// سرور ممکن است تراکنش را ثبت کرده باشد ولی پاسخ به ما نرسیده باشد.
+  Future<({bool credited, int orderId})> _pollStatusUntilFinal(
+    PendingBazaarPurchase rec,
+  ) async {
+    for (int i = 0; i < 10; i++) {
+      await Future<void>.delayed(const Duration(seconds: 3));
+      final ({bool credited, int orderId, String status}) outcome =
+          await _queryStatus(rec);
+      if (outcome.credited) {
+        return (credited: true, orderId: outcome.orderId);
+      }
+      if (outcome.status == 'failed' || outcome.status == 'refunded') {
+        return (credited: false, orderId: 0);
+      }
+    }
+    return (credited: false, orderId: 0);
+  }
+
   /// تسویهٔ خرید مستقیماً از دارت | POST {apiBase}payment/bazaar/verify.
   Future<_VerifyOutcome> _verifyPurchase(PendingBazaarPurchase rec) async {
     final Uri? url = _verifyUrl;
@@ -420,6 +503,8 @@ class BazaarPayments {
       return const _VerifyOutcome(credited: false, retryable: false);
     }
     try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final String authToken = prefs.getString('wptf_auth_token') ?? '';
       final HttpClient client = _client ??= HttpClient()
         ..connectionTimeout = const Duration(seconds: 15);
       final HttpClientRequest request =
@@ -431,7 +516,8 @@ class BazaarPayments {
         'order_id': rec.orderId,
         'package_name': rec.packageName,
         'payload': rec.payload,
-      }));
+          if (authToken.isNotEmpty) 'auth_token': authToken,
+        }));
       final HttpClientResponse response =
           await request.close().timeout(const Duration(seconds: 20));
       final String body = await response
