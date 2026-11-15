@@ -93,14 +93,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
 
     setState(() => _isLoading = true);
+    // تایم‌اوت و بستن قطعی اتصال | قطعی شبکه دکمه را گیر نمی‌اندازد و سوکت نشت نمیکند.
+    final HttpClient client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 10);
     try {
       final Uri uri = Uri.parse('${widget.config.effectiveApiBaseUrl}auth/send-otp');
-      final HttpClient client = HttpClient();
-      final HttpClientRequest request = await client.postUrl(uri);
+      final HttpClientRequest request = await client
+          .postUrl(uri)
+          .timeout(const Duration(seconds: 15));
       request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
       request.add(utf8.encode(jsonEncode(<String, String>{'phone': phone})));
-      final HttpClientResponse response = await request.close();
-      final String body = await response.transform(utf8.decoder).join();
+      final HttpClientResponse response = await request.close().timeout(
+        const Duration(seconds: 15),
+      );
+      final String body = await response
+          .transform(utf8.decoder)
+          .join()
+          .timeout(const Duration(seconds: 15));
       final dynamic decoded = jsonDecode(body);
       final bool success = decoded is Map<String, dynamic> && decoded['success'] == true;
       if (!mounted) return;
@@ -130,6 +139,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (!mounted) return;
       setState(() => _isLoading = false);
       _showNotice('خطا در برقراری ارتباط با سرور');
+    } finally {
+      client.close(force: true);
     }
   }
 
@@ -138,10 +149,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
     if (code.isEmpty) return;
 
     setState(() => _isLoading = true);
+    // تایم‌اوت و بستن قطعی اتصال | قطعی شبکه دکمه را گیر نمی‌اندازد و سوکت نشت نمیکند.
+    final HttpClient client = HttpClient()
+      ..connectionTimeout = const Duration(seconds: 10);
     try {
       final Uri uri = Uri.parse('${widget.config.effectiveApiBaseUrl}auth/verify-otp');
-      final HttpClient client = HttpClient();
-      final HttpClientRequest request = await client.postUrl(uri);
+      final HttpClientRequest request = await client
+          .postUrl(uri)
+          .timeout(const Duration(seconds: 15));
       request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
       request.add(
         utf8.encode(
@@ -151,8 +166,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
           }),
         ),
       );
-      final HttpClientResponse response = await request.close();
-      final String body = await response.transform(utf8.decoder).join();
+      final HttpClientResponse response = await request.close().timeout(
+        const Duration(seconds: 15),
+      );
+      final String body = await response
+          .transform(utf8.decoder)
+          .join()
+          .timeout(const Duration(seconds: 15));
       final dynamic decoded = jsonDecode(body);
       final bool success = decoded is Map<String, dynamic> && decoded['success'] == true;
       if (!mounted) return;
@@ -186,6 +206,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (!mounted) return;
       setState(() => _isLoading = false);
       _showNotice('خطا در برقراری ارتباط با سرور');
+    } finally {
+      client.close(force: true);
     }
   }
 

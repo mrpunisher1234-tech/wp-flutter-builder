@@ -327,7 +327,8 @@ class _NativeCheckoutScreenState extends State<NativeCheckoutScreen> {
   }
   }
 
-  /// ۱) ساخت سفارش رسمی ووکامرس | ۲) لینک درگاه | ۳) باز کردن مرورگر امن بانک.
+  /// ساخت سفارش رسمی ووکامرس | لینک درگاه | باز کردن Custom Tab بانک.
+  /// بدون هیچ پاپ‌آپ اضافه | دکمه خودش حالت لودینگ میگیرد و لینک که آماده شد مستقیم بانک باز میشود.
   Future<void> _submitAndPay() async {
     if (_submitting) return;
     // درگاه بازار | مسیر پرداخت درون‌برنامه‌ای.
@@ -340,30 +341,7 @@ class _NativeCheckoutScreenState extends State<NativeCheckoutScreen> {
     }
     setState(() => _submitting = true);
     BankPayments.instance.checkoutBusy = true;
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (BuildContext dialogContext) => const Dialog(
-        backgroundColor: Colors.white,
-        surfaceTintColor: Colors.transparent,
-        child: Padding(
-          padding: EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              CircularProgressIndicator(strokeWidth: 2.5),
-              SizedBox(height: 16),
-              Text('در حال ثبت سفارش…', style: TextStyle(fontSize: 13)),
-            ],
-          ),
-        ),
-      ),
-    );
 
-    // قبل از هر await گرفته می‌شود تا بستن لودینگ حتی بعد از unmount هم امن
-    // باشد و هیچ‌وقت دو بار pop نشود (پاپ دوم صفحهٔ چک‌اوت را می‌بست).
-    final NavigatorState navigator = Navigator.of(context);
-    bool dialogOpen = true;
     HttpClient? client;
     try {
       final SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -371,24 +349,54 @@ class _NativeCheckoutScreenState extends State<NativeCheckoutScreen> {
 
       client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
 
-      // ۱) ساخت سفارش | قیمتها و موجودی از خود ووکامرس خوانده میشود.
-      _pendingOrder ??= await BankPayments.instance.load(
-        widget.config.effectiveApiBaseUrl,
-      );
-
+      // ۱) سفارش pending از انبار | اگر سفارش تازه لازم است فرم همینجا اعتبارسنجی میشود.
+      if (_pendingOrder == null) {
+        try {
+          _pendingOrder = await BankPayments.instance.load(
+            widget.config.effectiveApiBaseUrl,
+          );
+        } catch (_) {
+          _pendingOrder = null;
+        }
+        if (_pendingOrder == null &&
+            (!mounted || !_formKey.currentState!.validate())) {
+          return;
+        }
+      }
       if (_pendingOrder != null) {
         final BankOrderStatus? status = await BankPayments.instance.reconcile(
           widget.config.effectiveApiBaseUrl,
         );
         if (status?.paid == true) {
-        dialogOpen = false;
-        navigator.pop();
           await _showBankSuccess(status!.order, status.refId);
           return;
         }
-      } else {
+        // سفارش لغوشده/ناموفق یا سبد و آدرس عوضشده | پاک میشود تا سفارش تازه ساخته شود.
+        if (BankPayments.isDiscardable(
+          status,
+          _pendingOrder!.fingerprint,
+          _cartFingerprint(),
+        )) {
+          await BankPayments.instance.clear(
+            widget.config.effectiveApiBaseUrl,
+          );
+          _pendingOrder = null;
+        }
+      }
+      if (_pendingOrder == null) {
         if (!mounted || !_formKey.currentState!.validate()) return;
-        _pendingOrder = await _createOrder(client, token);
+        final PendingBankOrder created = await _createOrder(client, token);
+        _pendingOrder = PendingBankOrder(
+          id: created.id,
+          key: created.key,
+          total: created.total,
+          couponError: created.couponError,
+          fingerprint: _cartFingerprint(),
+        );
+        // خطای کوپن قبلاً در دیالوگ حذف‌شده بود | حالا با اسنک‌بار میرسد | سفارش با قیمت ووکامرس معتبر است.
+        if (mounted && created.couponError.isNotEmpty) {
+          _notice(created.couponError);
+        }
       }
       final PendingBankOrder order = _pendingOrder!;
       await BankPayments.instance.save(
@@ -397,33 +405,8 @@ class _NativeCheckoutScreenState extends State<NativeCheckoutScreen> {
       );
       if (!mounted) return;
       setState(() => _serverTotal = order.total);
-      dialogOpen = false;
-      navigator.pop();
-      final bool? confirmed = await showDialog<bool>(
-        context: context,
-        builder: (BuildContext dialogContext) => Directionality(
-          textDirection: TextDirection.rtl,
-          child: AlertDialog(
-            title: const Text('تأیید پرداخت سفارش'),
-            content: Text(
-              '${order.couponError.isEmpty ? '' : '${order.couponError}\n\n'}سفارش شماره ${toPersianDigits('${order.id}')}\nمبلغ نهایی سایت: ${formatToman('${order.total}')}',
-            ),
-            actions: <Widget>[
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(false),
-                child: const Text('فعلاً نه'),
-              ),
-              TextButton(
-                onPressed: () => Navigator.of(dialogContext).pop(true),
-                child: const Text('ادامه پرداخت'),
-              ),
-            ],
-          ),
-        ),
-      );
-      if (confirmed != true || !mounted) return;
 
-      // ۲) لینک درگاه | زرین‌پال StartPay.
+      // ۲) لینک درگاه | بدون دیالوگ تأیید اضافه | مستقیم بانک.
       final Map<String, dynamic> payment = await _requestPayment(
         client,
         order,
@@ -435,33 +418,41 @@ class _NativeCheckoutScreenState extends State<NativeCheckoutScreen> {
       }
       final String paymentUrl = payment['payment_url'] as String;
 
-      // ۳) صفحه امن بانک در مرورگر گوشی | بعد از پرداخت دیپ‌لینک به اپ برمیگردد.
+      // ۳) صفحه امن بانک | اول Custom Tab داخل اپ | اگر نشد مرورگر بیرونی.
       final Uri gatewayUri = Uri.parse(paymentUrl);
+      bool opened = false;
+      try {
+        opened = await launchUrl(gatewayUri, mode: LaunchMode.inAppBrowserView);
+      } catch (_) {
+        opened = false;
+      }
+      if (!opened) {
+        try {
+          opened = await launchUrl(
+            gatewayUri,
+            mode: LaunchMode.externalApplication,
+          );
+        } catch (_) {
+          opened = false;
+        }
+      }
       BankPayments.instance.checkoutBusy = false;
-      if (await canLaunchUrl(gatewayUri)) {
-        await launchUrl(gatewayUri, mode: LaunchMode.externalApplication);
-      } else {
-        await launchUrl(gatewayUri, mode: LaunchMode.platformDefault);
+      if (mounted) {
+        _notice(
+          opened
+              ? 'صفحه پرداخت باز شد | پس از پرداخت به اپ برمی‌گردید'
+              : 'صفحه پرداخت باز نشد | دوباره تلاش کنید',
+        );
       }
-      _notice('صفحه پرداخت باز شد | پس از پرداخت به اپ برمی‌گردید');
     } on WptfApiException catch (error) {
-      if (dialogOpen) {
-        dialogOpen = false;
-        navigator.pop();
-      }
       if (mounted) {
         _notice(error.message);
       }
     } catch (_) {
-      if (dialogOpen) {
-        dialogOpen = false;
-        navigator.pop();
-      }
       if (mounted) {
         _notice('خطا در ارتباط با سایت');
       }
     } finally {
-      if (dialogOpen && navigator.mounted) navigator.pop();
       BankPayments.instance.checkoutBusy = false;
       client?.close(force: true);
       if (mounted) {
@@ -494,6 +485,24 @@ class _NativeCheckoutScreenState extends State<NativeCheckoutScreen> {
         ),
       ),
     );
+  }
+
+  /// اثر انگشت سبد و آدرس | اگر پس از ساختن سفارش چیزی عوض شود، سفارش کهنه
+  /// دیگر معتبر نیست و باید پاک و از نو ساخته شود.
+  String _cartFingerprint() {
+    final StringBuffer buffer = StringBuffer();
+    for (final CartItem cartItem in CartManager.instance.items) {
+      buffer.write('${cartItem.item.id}:${cartItem.quantity}|');
+    }
+    buffer.write('coupon=${_appliedCode ?? ''}');
+    buffer.write('|name=${_name.text.trim()}');
+    buffer.write('|phone=${normalizePhone(_phone.text)}');
+    buffer.write('|state=$_stateCode');
+    buffer.write('|city=${_city.text.trim()}');
+    buffer.write('|address=${_address.text.trim()}');
+    buffer.write('|postcode=${latinDigits(_postcode.text)}');
+    buffer.write('|note=${_note.text.trim()}');
+    return buffer.toString();
   }
 
   Future<PendingBankOrder> _createOrder(HttpClient client, String token) async {
@@ -688,10 +697,35 @@ class _NativeCheckoutScreenState extends State<NativeCheckoutScreen> {
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
                   onPressed: _submitting ? null : _submitAndPay,
-                  child: Text(
-                    _submitting ? 'در حال ثبت…' : 'ثبت و پرداخت آنلاین',
-                    style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold),
-                  ),
+                  child: _submitting
+                      ? const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: <Widget>[
+                            SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            ),
+                            SizedBox(width: 10),
+                            Text(
+                              'در حال ثبت…',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        )
+                      : const Text(
+                          'ثبت و پرداخت آنلاین',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                 ),
               ),
               const SizedBox(height: 8),

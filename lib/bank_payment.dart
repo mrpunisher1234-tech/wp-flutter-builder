@@ -10,6 +10,7 @@ class PendingBankOrder {
     required this.key,
     required this.total,
     this.couponError = '',
+    this.fingerprint = '',
   });
 
   final int id;
@@ -17,11 +18,15 @@ class PendingBankOrder {
   final int total;
   final String couponError;
 
+  /// اثر انگشت سبد و آدرس لحظهٔ ساختن سفارش | مقایسه در submit | عوضشده = سفارش کهنه بیاعتبار.
+  final String fingerprint;
+
   Map<String, dynamic> toMap() => <String, dynamic>{
     'order_id': id,
     'order_key': key,
     'total': total,
     'coupon_error': couponError,
+    'fingerprint': fingerprint,
   };
 
   factory PendingBankOrder.fromMap(Map<String, dynamic> data) =>
@@ -30,6 +35,7 @@ class PendingBankOrder {
         key: data['order_key'] as String,
         total: num.parse('${data['total']}').round(),
         couponError: (data['coupon_error'] ?? '').toString(),
+        fingerprint: (data['fingerprint'] ?? '').toString(),
       );
 }
 
@@ -74,6 +80,27 @@ class BankPayments {
     )) {
       throw StateError('Pending order could not be saved');
     }
+  }
+
+  /// پاک کردن سفارش انبار | برای سفارش لغوشده یا سبد عوضشده تا سفارش تازه ساخته شود.
+  Future<void> clear(String apiBase) async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_storageKey(apiBase));
+  }
+
+  /// سفارش انبار دیگر قابل استفاده نیست؟ | وضعیت لغوشده/ناموفق یا سبد و آدرس
+  /// عوضشده | سفارش پرداختشده هرگز اینجا دور ریخته نمیشود (مسیر موفقیت جدا است).
+  static bool isDiscardable(
+    BankOrderStatus? status,
+    String storedFingerprint,
+    String currentFingerprint,
+  ) {
+    if (status != null && status.paid) return false;
+    if (storedFingerprint != currentFingerprint) return true;
+    return status != null &&
+        (status.status == 'cancelled' ||
+            status.status == 'failed' ||
+            status.status == 'trash');
   }
 
   Future<bool> complete(String apiBase, int orderId) async {

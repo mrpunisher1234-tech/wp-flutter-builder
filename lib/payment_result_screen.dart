@@ -23,7 +23,7 @@ class PaymentResultScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Directionality(
+    final Widget content = Directionality(
       textDirection: TextDirection.rtl,
       child: Scaffold(
         backgroundColor: Dk.canvas,
@@ -117,7 +117,11 @@ class PaymentResultScreen extends StatelessWidget {
                     background: config.primaryColor,
                     foreground: Colors.white,
                     onTap: () {
-                      Navigator.of(context).pushReplacement(
+                      // اول تا صفحه اول پاپ میشود | Back از لیست سفارشها روی فرم خالی تسویه‌حساب نمی‌افتد.
+                      Navigator.of(context).popUntil(
+                        (Route<dynamic> route) => route.isFirst,
+                      );
+                      Navigator.of(context).push(
                         MaterialPageRoute<void>(
                           builder: (_) => OrdersScreen(config: config),
                         ),
@@ -151,6 +155,16 @@ class PaymentResultScreen extends StatelessWidget {
           ),
         ),
       ),
+    );
+    // در موفقیت دکمه Back گوشی هم مستقیم به صفحه اول فروشگاه میرود
+    // تا کاربر روی فرم خالی تسویه‌حساب برگردد | در ناموفق Back مثل تلاش مجدد به تسویه‌حساب برمیگردد.
+    return PopScope<Object?>(
+      canPop: !_success,
+      onPopInvokedWithResult: (bool didPop, Object? result) {
+        if (didPop || !_success) return;
+        Navigator.of(context).popUntil((Route<dynamic> route) => route.isFirst);
+      },
+      child: content,
     );
   }
 

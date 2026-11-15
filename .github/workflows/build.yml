@@ -121,7 +121,7 @@ jobs:
       # false از client_payload نباید به 'true' تبدیل شود | مقایسه با null کافی نیست
       # چون true && false میشود false و از || 'true' رد میشود؛ پس false واقعی
       # با ternary مستقیم به 'false' تبدیل میشود.
-      SPLASH_SHOW_LOGO: ${{ github.event.client_payload.splash_show_logo == false ? 'false' : (github.event.client_payload.splash_show_logo || github.event.inputs.splash_show_logo || 'true') }}
+      SPLASH_SHOW_LOGO: "${{ github.event.client_payload.splash_show_logo == false ? 'false' : (github.event.client_payload.splash_show_logo || github.event.inputs.splash_show_logo || 'true') }}"
       SPLASH_IMAGE_URL: ${{ github.event.client_payload.splash_image_url || github.event.inputs.splash_image_url || '' }}
       SPLASH_SITE_ICON: ${{ github.event.client_payload.splash_site_icon || github.event.inputs.splash_site_icon || '' }}
       SPLASH_LOGO_URL: ${{ github.event.client_payload.splash_logo_url || github.event.inputs.splash_logo_url || github.event.client_payload.splash_image_url || github.event.inputs.splash_image_url || github.event.client_payload.splash_site_icon || github.event.inputs.splash_site_icon || '' }}
@@ -225,6 +225,12 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: 'Patch gradle.properties (strip local proxy + sane heap)'
+        run: |
+          # پروکسی 127.0.0.1 فقط مال سیستم محلی است | روی رانر ابری هر dependency میمیرد
+          sed -i 's/^org.gradle.jvmargs=.*/org.gradle.jvmargs=-Xmx3g -XX:MaxMetaspaceSize=1g -XX:+HeapDumpOnOutOfMemoryError/' android/gradle.properties
+          sed -i '/^systemProp\./d' android/gradle.properties
 
       - name: 'Setup Java 17 (Temurin)'
         uses: actions/setup-java@v4

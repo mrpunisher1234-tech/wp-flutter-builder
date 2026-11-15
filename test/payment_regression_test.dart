@@ -63,6 +63,89 @@ void main() {
     expect(await BankPayments.instance.load(base), isNull);
   });
 
+  test('cancelled order or changed cart fingerprint discards pending order', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    const String base = 'https://shop.example/api/';
+    // سفارش قدیمی بدون fingerprint (نسخهٔ قبلی اپ) | اثر انگشت خالی با هر سبد تازه‌ای فرق دارد.
+    final PendingBankOrder legacy = PendingBankOrder.fromMap(<String, dynamic>{
+      'order_id': 77,
+      'order_key': 'wc_order_legacy',
+      'total': '90000',
+    });
+    expect(legacy.fingerprint, '');
+
+    final PendingBankOrder stored = PendingBankOrder(
+      id: 88,
+      key: 'wc_order_stored',
+      total: 120000,
+      fingerprint: '41:2|coupon=',
+    );
+    await BankPayments.instance.save(base, stored);
+    expect((await BankPayments.instance.load(base))!.fingerprint, '41:2|coupon=');
+
+    // وضعیت لغو/ناموفق از سرور | سفارش باید دور ریخته شود.
+    expect(
+      BankPayments.isDiscardable(
+        BankOrderStatus(stored, false, 'cancelled', ''),
+        stored.fingerprint,
+        stored.fingerprint,
+      ),
+      isTrue,
+    );
+    expect(
+      BankPayments.isDiscardable(
+        BankOrderStatus(stored, false, 'failed', ''),
+        stored.fingerprint,
+        stored.fingerprint,
+      ),
+      isTrue,
+    );
+    expect(
+      BankPayments.isDiscardable(
+        BankOrderStatus(stored, false, 'trash', ''),
+        stored.fingerprint,
+        stored.fingerprint,
+      ),
+      isTrue,
+    );
+    // در انتظار پرداخت و سبد دست‌نخورده | سفارش میماند.
+    expect(
+      BankPayments.isDiscardable(
+        BankOrderStatus(stored, false, 'pending', ''),
+        stored.fingerprint,
+        stored.fingerprint,
+      ),
+      isFalse,
+    );
+    expect(
+      BankPayments.isDiscardable(null, stored.fingerprint, stored.fingerprint),
+      isFalse,
+    );
+    // سفارش پرداختشده هرگز اینجا دور ریخته نمیشود | مسیر موفقیت جدا است.
+    expect(
+      BankPayments.isDiscardable(
+        BankOrderStatus(stored, true, 'cancelled', ''),
+        stored.fingerprint,
+        stored.fingerprint,
+      ),
+      isFalse,
+    );
+    // تغییر سبد | حتی بدون جواب سرور (status null) سفارش کهنه اعتبار ندارد.
+    expect(
+      BankPayments.isDiscardable(null, stored.fingerprint, '41:3|coupon='),
+      isTrue,
+    );
+
+    // پاکسازی واقعی انبار | فقط کلید همین سایت پاک میشود و بقیه دست‌نخورده میمانند.
+    await BankPayments.instance.save('https://other.example/api/', stored);
+    await BankPayments.instance.clear(base);
+    expect(await BankPayments.instance.load(base), isNull);
+    expect(
+      await BankPayments.instance.load('https://other.example/api/'),
+      isNotNull,
+    );
+  });
+
   test('pagination uses server page count even for full last pages', () {
     const ApiPage lastPage = ApiPage(200, '[]', 2);
     expect(lastPage.hasNextPage(1), isTrue);

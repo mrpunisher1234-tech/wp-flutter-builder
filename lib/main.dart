@@ -6,6 +6,7 @@ import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 
@@ -770,12 +771,21 @@ class _SplashGateState extends State<_SplashGate>
   }
 
   Future<void> _reconcileBankPayment() async {
-    if (!mounted || BankPayments.instance.checkoutBusy) return;
+    if (!mounted ||
+        BankPayments.instance.checkoutBusy ||
+        _paymentLinksInFlight.isNotEmpty) {
+      return;
+    }
     try {
       final BankOrderStatus? result = await BankPayments.instance.reconcile(
         _current.effectiveApiBaseUrl,
       );
-      if (!mounted || result == null || !result.paid) return;
+      if (!mounted ||
+          _paymentLinksInFlight.isNotEmpty ||
+          result == null ||
+          !result.paid) {
+        return;
+      }
       await _handlePaymentDeepLink(
         Uri(
           scheme: _current.deepLinkScheme.trim().isEmpty
@@ -788,13 +798,12 @@ class _SplashGateState extends State<_SplashGate>
             'ref_id': result.refId,
           },
         ),
-        verified: true,
       );
     } catch (_) {}
   }
 
   /// نتیجه پرداخت از مرورگر رسید | سبد در موفقیت خالی و صفحه نتیجه باز میشود.
-  Future<void> _handlePaymentDeepLink(Uri uri, {bool verified = false}) async {
+  Future<void> _handlePaymentDeepLink(Uri uri) async {
     final String scheme = _current.deepLinkScheme.trim().isEmpty
         ? 'wptoflutter'
         : _current.deepLinkScheme.trim();
@@ -810,6 +819,7 @@ class _SplashGateState extends State<_SplashGate>
     final String status = (uri.queryParameters['status'] ?? '').toLowerCase();
     final int orderId =
         int.tryParse(uri.queryParameters['order_id'] ?? '') ?? 0;
+    if (status == 'success' && orderId <= 0) return;
     final String identity = orderId > 0 ? '$orderId:$status' : uri.toString();
     if (!mounted ||
         _handledPaymentLinks.contains(identity) ||
@@ -817,34 +827,34 @@ class _SplashGateState extends State<_SplashGate>
       return;
     }
     try {
+      unawaited(closeInAppWebView().catchError((Object error) {}));
       if (status == 'success') {
-        if (!verified) {
-          final PendingBankOrder? pending = await BankPayments.instance.load(
+        _handledPaymentLinks.add(identity);
+      }
+      final PageRoute<void> resultRoute = PageRouteBuilder<void>(
+        pageBuilder: (context, animation, secondaryAnimation) =>
+            PaymentResultScreen(uri: uri, config: _current),
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
+      );
+      if (status == 'success') {
+        Navigator.of(context).pushAndRemoveUntil<void>(
+          resultRoute,
+          (Route<dynamic> route) => route.isFirst,
+        );
+      } else {
+        Navigator.of(context).push<void>(resultRoute);
+      }
+      if (status == 'success') {
+        await Future<void>(() async {
+          if (await BankPayments.instance.complete(
             _current.effectiveApiBaseUrl,
-          );
-          if (pending != null) {
-            if (pending.id != orderId) return;
-            final BankOrderStatus? result = await BankPayments.instance
-                .reconcile(_current.effectiveApiBaseUrl);
-            if (result?.paid != true) return;
+            orderId,
+          )) {
+            CartManager.instance.clearCart();
           }
-        }
-        if (orderId > 0 &&
-            !await BankPayments.instance.complete(
-              _current.effectiveApiBaseUrl,
-              orderId,
-            )) {
-          return;
-        }
-        CartManager.instance.clearCart();
-    }
-    if (!mounted) return;
-      _handledPaymentLinks.add(identity);
-      Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => PaymentResultScreen(uri: uri, config: _current),
-      ),
-    );
+        });
+      }
     } catch (_) {
     } finally {
       _paymentLinksInFlight.remove(identity);
@@ -899,7 +909,9 @@ class _SplashGateState extends State<_SplashGate>
     if (state != AppLifecycleState.resumed) {
       return;
     }
-    _reconcileBankPayment();
+    if (_paymentLinksInFlight.isEmpty) {
+      unawaited(_reconcileBankPayment());
+    }
     if (BazaarPayments.instance.state == BazaarState.connected) {
       BazaarPayments.instance.recoverPurchases();
     } else {
