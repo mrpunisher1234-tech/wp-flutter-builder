@@ -13,6 +13,7 @@ import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'bazaar_payment.dart';
 import 'bank_payment.dart';
 import 'cart_screen.dart';
+import 'announcement.dart';
 import 'native_mode.dart';
 import 'payment_result_screen.dart';
 import 'splash_screen.dart';
@@ -90,6 +91,7 @@ class AppConfig {
     this.paymentSandbox = false,
     this.bazaarUseLocalSignatureCheck = false,
     this.bazaarRsaPublicKey = '',
+    this.announcement = const AppAnnouncement(),
   });
 
   final String appName;
@@ -140,6 +142,7 @@ class AppConfig {
   final bool paymentSandbox;
   final bool bazaarUseLocalSignatureCheck;
   final String bazaarRsaPublicKey;
+  final AppAnnouncement announcement;
 
   /// لوگوی نهایی اسپلش | اولویت حلشده سمت وردپرس، وگرنه:
   /// ۱. لوگوی اختصاصی اسپلش، ۲. آیکون سایت، ۳. آیکون رسمی اپ.
@@ -212,12 +215,15 @@ class AppConfig {
         (map['app'] as Map<dynamic, dynamic>?) ?? <dynamic, dynamic>{};
     final Map<dynamic, dynamic> icon =
         (app['icon'] as Map<dynamic, dynamic>?) ?? <dynamic, dynamic>{};
-    final Map<dynamic, dynamic> supportBlock =
-        (map['support'] is Map) ? (map['support'] as Map).cast<dynamic, dynamic>() : <dynamic, dynamic>{};
-    final Map<dynamic, dynamic> aboutBlock =
-        (map['about'] is Map) ? (map['about'] as Map).cast<dynamic, dynamic>() : <dynamic, dynamic>{};
+    final Map<dynamic, dynamic> supportBlock = (map['support'] is Map)
+        ? (map['support'] as Map).cast<dynamic, dynamic>()
+        : <dynamic, dynamic>{};
+    final Map<dynamic, dynamic> aboutBlock = (map['about'] is Map)
+        ? (map['about'] as Map).cast<dynamic, dynamic>()
+        : <dynamic, dynamic>{};
     final String resolvedAppIcon = AppConfig.mapEmulatorUrl(
-      ((icon['url'] as String?) ?? (map['app_icon_url'] as String?) ?? '').trim(),
+      ((icon['url'] as String?) ?? (map['app_icon_url'] as String?) ?? '')
+          .trim(),
     );
 
     return AppConfig(
@@ -229,14 +235,30 @@ class AppConfig {
       ),
       apiBaseUrl: rawApiBase.isEmpty ? '' : normalizeSiteUrl(rawApiBase),
       appIconUrl: resolvedAppIcon,
-      renderMode: (map['render_mode'] as String?) == 'native' ? 'native' : 'webview',
+      renderMode: (map['render_mode'] as String?) == 'native'
+          ? 'native'
+          : 'webview',
       // همان چهار عبارت پرطرفدار که بیلد ابری داخل APK میپزد؛ از این پس
       // صفحه جستجو حتی بدون شبکه و در اولین فریم هم آنها را دارد.
       searchSuggestions: parseSuggestions(map['search_suggestions']),
       supportStoreName: ((supportBlock['store_name'] as String?) ?? '').trim(),
-      supportStorePhone: ((supportBlock['store_phone'] as String?) ?? '').trim(),
+      supportStorePhone: ((supportBlock['store_phone'] as String?) ?? '')
+          .trim(),
       aboutText: ((aboutBlock['text'] as String?) ?? '').trim(),
       aboutBadges: parseBadges(aboutBlock['badges']),
+      announcement: parseAnnouncement(map['announcement']),
+    );
+  }
+
+  static AppAnnouncement parseAnnouncement(
+    dynamic raw, {
+    AppAnnouncement? fallback,
+  }) {
+    if (raw is! Map) return fallback ?? const AppAnnouncement();
+    final AppAnnouncement parsed = AppAnnouncement.fromMap(raw);
+    return parsed.copyWith(
+      imageUrl: mapEmulatorUrl(parsed.imageUrl),
+      linkUrl: mapEmulatorUrl(parsed.linkUrl),
     );
   }
 
@@ -244,11 +266,7 @@ class AppConfig {
   static List<AboutBadge> parseBadges(dynamic raw) {
     return (raw is List ? raw : const <dynamic>[])
         .whereType<Map>()
-        .map(
-          (Map row) => AboutBadge.fromMap(
-            row.cast<String, dynamic>(),
-          ),
-        )
+        .map((Map row) => AboutBadge.fromMap(row.cast<String, dynamic>()))
         .where((AboutBadge badge) => badge.image.isNotEmpty)
         .toList(growable: false);
   }
@@ -296,15 +314,19 @@ class AppConfig {
   static Future<AppConfig> load() async {
     final String raw = await rootBundle.loadString('assets/config.json');
     final dynamic decoded = jsonDecode(raw);
-    AppConfig config = AppConfig.fromMap(
-      decoded is Map<String, dynamic> ? decoded : <String, dynamic>{},
-    ).withSplash(decoded is Map<String, dynamic> ? decoded : <String, dynamic>{});
+    AppConfig config =
+        AppConfig.fromMap(
+          decoded is Map<String, dynamic> ? decoded : <String, dynamic>{},
+        ).withSplash(
+          decoded is Map<String, dynamic> ? decoded : <String, dynamic>{},
+        );
 
     try {
       final SharedPreferences prefs = await SharedPreferences.getInstance();
       config = config.withSplash(<String, dynamic>{
         'app_icon_url': prefs.getString('wptf_app_icon_url') ?? '',
-        'splash_logo_bundled_url': prefs.getString('wptf_splash_logo_bundled_url') ?? '',
+        'splash_logo_bundled_url':
+            prefs.getString('wptf_splash_logo_bundled_url') ?? '',
         'app': <String, dynamic>{
           'icon': <String, dynamic>{
             'url': prefs.getString('wptf_app_icon_url') ?? '',
@@ -335,7 +357,8 @@ class AppConfig {
     final Map<dynamic, dynamic> icon =
         (app['icon'] as Map<dynamic, dynamic>?) ?? <dynamic, dynamic>{};
     final dynamic liveAppIcon = icon['url'] ?? map['app_icon_url'];
-    final String resolvedAppIcon = liveAppIcon == null || liveAppIcon.toString().trim().isEmpty
+    final String resolvedAppIcon =
+        liveAppIcon == null || liveAppIcon.toString().trim().isEmpty
         ? appIconUrl
         : AppConfig.mapEmulatorUrl(liveAppIcon.toString().trim());
 
@@ -352,18 +375,27 @@ class AppConfig {
       return inherited;
     }
 
-    final Map<dynamic, dynamic> supportBlock =
-        (map['support'] is Map) ? (map['support'] as Map).cast<dynamic, dynamic>() : <dynamic, dynamic>{};
-    final Map<dynamic, dynamic> aboutBlock =
-        (map['about'] is Map) ? (map['about'] as Map).cast<dynamic, dynamic>() : <dynamic, dynamic>{};
+    final Map<dynamic, dynamic> supportBlock = (map['support'] is Map)
+        ? (map['support'] as Map).cast<dynamic, dynamic>()
+        : <dynamic, dynamic>{};
+    final Map<dynamic, dynamic> aboutBlock = (map['about'] is Map)
+        ? (map['about'] as Map).cast<dynamic, dynamic>()
+        : <dynamic, dynamic>{};
 
-    String blockText(Map<dynamic, dynamic> block, String key, String inherited) {
+    String blockText(
+      Map<dynamic, dynamic> block,
+      String key,
+      String inherited,
+    ) {
       // غایب یعنی قدیم حفظ شود | موجود ولی خالی یعنی عمداً پاک شده.
       if (!block.containsKey(key) || block[key] == null) return inherited;
       return block[key].toString().trim();
     }
 
-    List<AboutBadge> blockBadges(Map<dynamic, dynamic> block, List<AboutBadge> inherited) {
+    List<AboutBadge> blockBadges(
+      Map<dynamic, dynamic> block,
+      List<AboutBadge> inherited,
+    ) {
       if (!block.containsKey('badges')) return inherited;
       // لیست خالی عمدی یعنی همه نشان‌ها حذف شدهاند | قدیم برنگردد.
       return parseBadges(block['badges']);
@@ -408,29 +440,24 @@ class AppConfig {
         splashBackgroundHex,
       ),
       splashText: pickText('text', 'splash_text', splashText),
-      splashTextHex: pickText(
-        'text_color',
-        'splash_text_color',
-        splashTextHex,
-      ),
-      splashShowLogo: pickBool(
-        'show_logo',
-        'splash_show_logo',
-        splashShowLogo,
-      ),
+      splashTextHex: pickText('text_color', 'splash_text_color', splashTextHex),
+      splashShowLogo: pickBool('show_logo', 'splash_show_logo', splashShowLogo),
       splashSiteIconUrl: AppConfig.mapEmulatorUrl(
         pickText('site_icon_url', 'splash_site_icon', splashSiteIconUrl),
       ),
-      splashSiteName: pickText(
-        'site_name',
-        'splash_site_name',
-        splashSiteName,
-      ),
+      splashSiteName: pickText('site_name', 'splash_site_name', splashSiteName),
       // اطلاعات تماس و درباره ما | اگر بلوک در پاسخ نبود، مقدار فعلی حفظ می‌شود.
       supportStoreName: blockText(supportBlock, 'store_name', supportStoreName),
-      supportStorePhone: blockText(supportBlock, 'store_phone', supportStorePhone),
+      supportStorePhone: blockText(
+        supportBlock,
+        'store_phone',
+        supportStorePhone,
+      ),
       aboutText: blockText(aboutBlock, 'text', aboutText),
       aboutBadges: blockBadges(aboutBlock, aboutBadges),
+      announcement: map.containsKey('announcement')
+          ? AppConfig.parseAnnouncement(map['announcement'])
+          : announcement,
       // تنظیم ۱۴ | تسویه‌حساب نیتیو | از پاسخ سرور عیناً منتقل میشود.
       checkoutMode: checkoutMode,
       ordersPerPage: ordersPerPage,
@@ -456,114 +483,122 @@ class AppConfig {
     HttpClient? client;
     try {
       client = HttpClient()..connectionTimeout = const Duration(seconds: 4);
-      final HttpClientRequest request =
-          await client.getUrl(Uri.parse('${effectiveApiBaseUrl}config'));
+      final HttpClientRequest request = await client.getUrl(
+        Uri.parse('${effectiveApiBaseUrl}config'),
+      );
       final HttpClientResponse response = await request.close();
       if (response.statusCode != 200) return this;
       final String body = await response.transform(utf8.decoder).join();
       final dynamic decoded = jsonDecode(body);
       if (decoded is! Map<String, dynamic>) return this;
-
-      final Map<dynamic, dynamic> checkoutBlock =
-          (decoded['checkout'] is Map)
-              ? (decoded['checkout'] as Map).cast<dynamic, dynamic>()
-              : <dynamic, dynamic>{};
-      final Map<dynamic, dynamic> paymentBlock =
-          (decoded['payment'] is Map)
-              ? (decoded['payment'] as Map).cast<dynamic, dynamic>()
-              : <dynamic, dynamic>{};
-      final String remoteScheme =
-          ((decoded['deep_link_scheme'] as String?) ?? '').trim();
-
-      final AppConfig base = AppConfig(
-        appName: appName,
-        siteUrl: siteUrl,
-        primaryColor: primaryColor,
-        apiBaseUrl: apiBaseUrl,
-        renderMode: renderMode,
-        categoryCanvas:
-            (decoded['category_canvas_size'] as num?)?.toInt() ?? categoryCanvas,
-        banners: AppConfig.parseBanners(decoded['native_banners']),
-        offerCountdownEnd:
-            ((decoded['offer_countdown_end'] as String?) ?? '').trim(),
-        logoUrl: AppConfig.mapEmulatorUrl(
-          ((decoded['logo_url'] as String?) ?? '').trim(),
-        ),
-        appIconUrl: AppConfig.mapEmulatorUrl(
-          (((decoded['app'] as Map?)?['icon'] as Map?)?['url'] as String? ?? appIconUrl).trim(),
-        ),
-        headerLogoUrl: AppConfig.mapEmulatorUrl(
-          (((decoded['header_logo'] as Map?)?['url'] as String?) ?? '').trim(),
-        ),
-        headerLogoName:
-            (((decoded['header_logo'] as Map?)?['name'] as String?) ?? '').trim(),
-        // اگر پاسخ سرور کلید را نداشت، مقدار پخته‌شده در APK حفظ می‌شود.
-        searchSuggestions: decoded.containsKey('search_suggestions')
-            ? AppConfig.parseSuggestions(decoded['search_suggestions'])
-            : searchSuggestions,
-        reviewsRequireLogin: decoded['reviews_require_login'] == true,
-        reviewsGuestPost: decoded['reviews_guest_post'] != false,
-        sliderInterval:
-            ((decoded['slider_interval'] as num?)?.toInt() ?? sliderInterval).clamp(3, 15),
-        supportStoreName: supportStoreName,
-        supportStorePhone: supportStorePhone,
-        aboutText: aboutText,
-        aboutBadges: aboutBadges,
-        // تنظیم ۱۴ | تسویه‌حساب نیتیو | مقادیر غایب یعنی قدیم حفظ شود.
-        checkoutMode: ((checkoutBlock['mode'] as String?) == 'webview')
-            ? 'webview'
-            : 'native',
-        ordersPerPage: (checkoutBlock['orders_per_page'] as num?)?.toInt() ??
-            ordersPerPage,
-        requirePostcode: checkoutBlock['require_postcode'] == null
-            ? requirePostcode
-            : checkoutBlock['require_postcode'] == true,
-        requireOrderNote: checkoutBlock['require_order_note'] == null
-            ? requireOrderNote
-            : checkoutBlock['require_order_note'] == true,
-        enableCoupons: checkoutBlock['enable_coupons'] == null
-            ? enableCoupons
-            : checkoutBlock['enable_coupons'] == true,
-        defaultShippingCost:
-            (checkoutBlock['default_shipping_cost'] as num?)?.toInt() ??
-                defaultShippingCost,
-        deepLinkScheme:
-            remoteScheme.isEmpty ? deepLinkScheme : remoteScheme,
-        // تنظیم ۱۵ | درگاه پرداخت + تیک امضای محلی RSA بازار.
-        paymentGateway: ((paymentBlock['gateway'] as String?) ?? paymentGateway)
-                .trim()
-                .isEmpty
-            ? paymentGateway
-            : ((paymentBlock['gateway'] as String?) ?? paymentGateway).trim(),
-        paymentSandbox: paymentBlock['sandbox'] == null
-            ? paymentSandbox
-            : paymentBlock['sandbox'] == true,
-        bazaarUseLocalSignatureCheck:
-            paymentBlock['use_local_signature_check'] == null
-                ? bazaarUseLocalSignatureCheck
-                : paymentBlock['use_local_signature_check'] == true,
-        bazaarRsaPublicKey: paymentBlock['rsa_public_key'] == null
-            ? bazaarRsaPublicKey
-            : ((paymentBlock['rsa_public_key'] as String?) ?? '').trim(),
-        // مقادیر اسپلش عیناً منتقل میشوند تا اگر پاسخ سرور ناقص بود، مقدار فعلی از دست نرود.
-        splashImageUrl: splashImageUrl,
-        splashLogoUrl: splashLogoUrl,
-        splashBackgroundHex: splashBackgroundHex,
-        splashText: splashText,
-        splashTextHex: splashTextHex,
-        splashShowLogo: splashShowLogo,
-        splashSiteIconUrl: splashSiteIconUrl,
-        splashSiteName: splashSiteName,
-        // واقعیت زمان بیلد | همیشه از داخل اپ میآید، نه از سرور.
-        splashLogoBundledUrl: splashLogoBundledUrl,
-      );
-
-      return base.withSplash(decoded);
+      return withRemoteSettings(decoded);
     } catch (_) {
       return this;
     } finally {
       client?.close(force: true);
     }
+  }
+
+  AppConfig withRemoteSettings(Map<String, dynamic> decoded) {
+    final Map<dynamic, dynamic> checkoutBlock = (decoded['checkout'] is Map)
+        ? (decoded['checkout'] as Map).cast<dynamic, dynamic>()
+        : <dynamic, dynamic>{};
+    final Map<dynamic, dynamic> paymentBlock = (decoded['payment'] is Map)
+        ? (decoded['payment'] as Map).cast<dynamic, dynamic>()
+        : <dynamic, dynamic>{};
+    final String remoteScheme = ((decoded['deep_link_scheme'] as String?) ?? '')
+        .trim();
+
+    final AppConfig base = AppConfig(
+      appName: appName,
+      siteUrl: siteUrl,
+      primaryColor: primaryColor,
+      apiBaseUrl: apiBaseUrl,
+      renderMode: renderMode,
+      categoryCanvas:
+          (decoded['category_canvas_size'] as num?)?.toInt() ?? categoryCanvas,
+      banners: AppConfig.parseBanners(decoded['native_banners']),
+      offerCountdownEnd: ((decoded['offer_countdown_end'] as String?) ?? '')
+          .trim(),
+      logoUrl: AppConfig.mapEmulatorUrl(
+        ((decoded['logo_url'] as String?) ?? '').trim(),
+      ),
+      appIconUrl: AppConfig.mapEmulatorUrl(
+        (((decoded['app'] as Map?)?['icon'] as Map?)?['url'] as String? ??
+                appIconUrl)
+            .trim(),
+      ),
+      headerLogoUrl: AppConfig.mapEmulatorUrl(
+        (((decoded['header_logo'] as Map?)?['url'] as String?) ?? '').trim(),
+      ),
+      headerLogoName:
+          (((decoded['header_logo'] as Map?)?['name'] as String?) ?? '').trim(),
+      // اگر پاسخ سرور کلید را نداشت، مقدار پخته‌شده در APK حفظ می‌شود.
+      searchSuggestions: decoded.containsKey('search_suggestions')
+          ? AppConfig.parseSuggestions(decoded['search_suggestions'])
+          : searchSuggestions,
+      reviewsRequireLogin: decoded['reviews_require_login'] == true,
+      reviewsGuestPost: decoded['reviews_guest_post'] != false,
+      sliderInterval:
+          ((decoded['slider_interval'] as num?)?.toInt() ?? sliderInterval)
+              .clamp(3, 15),
+      supportStoreName: supportStoreName,
+      supportStorePhone: supportStorePhone,
+      aboutText: aboutText,
+      aboutBadges: aboutBadges,
+      announcement: decoded.containsKey('announcement')
+          ? AppConfig.parseAnnouncement(decoded['announcement'])
+          : announcement,
+      // تنظیم ۱۴ | تسویه‌حساب نیتیو | مقادیر غایب یعنی قدیم حفظ شود.
+      checkoutMode: ((checkoutBlock['mode'] as String?) == 'webview')
+          ? 'webview'
+          : 'native',
+      ordersPerPage:
+          (checkoutBlock['orders_per_page'] as num?)?.toInt() ?? ordersPerPage,
+      requirePostcode: checkoutBlock['require_postcode'] == null
+          ? requirePostcode
+          : checkoutBlock['require_postcode'] == true,
+      requireOrderNote: checkoutBlock['require_order_note'] == null
+          ? requireOrderNote
+          : checkoutBlock['require_order_note'] == true,
+      enableCoupons: checkoutBlock['enable_coupons'] == null
+          ? enableCoupons
+          : checkoutBlock['enable_coupons'] == true,
+      defaultShippingCost:
+          (checkoutBlock['default_shipping_cost'] as num?)?.toInt() ??
+          defaultShippingCost,
+      deepLinkScheme: remoteScheme.isEmpty ? deepLinkScheme : remoteScheme,
+      // تنظیم ۱۵ | درگاه پرداخت + تیک امضای محلی RSA بازار.
+      paymentGateway:
+          ((paymentBlock['gateway'] as String?) ?? paymentGateway)
+              .trim()
+              .isEmpty
+          ? paymentGateway
+          : ((paymentBlock['gateway'] as String?) ?? paymentGateway).trim(),
+      paymentSandbox: paymentBlock['sandbox'] == null
+          ? paymentSandbox
+          : paymentBlock['sandbox'] == true,
+      bazaarUseLocalSignatureCheck:
+          paymentBlock['use_local_signature_check'] == null
+          ? bazaarUseLocalSignatureCheck
+          : paymentBlock['use_local_signature_check'] == true,
+      bazaarRsaPublicKey: paymentBlock['rsa_public_key'] == null
+          ? bazaarRsaPublicKey
+          : ((paymentBlock['rsa_public_key'] as String?) ?? '').trim(),
+      // مقادیر اسپلش عیناً منتقل میشوند تا اگر پاسخ سرور ناقص بود، مقدار فعلی از دست نرود.
+      splashImageUrl: splashImageUrl,
+      splashLogoUrl: splashLogoUrl,
+      splashBackgroundHex: splashBackgroundHex,
+      splashText: splashText,
+      splashTextHex: splashTextHex,
+      splashShowLogo: splashShowLogo,
+      splashSiteIconUrl: splashSiteIconUrl,
+      splashSiteName: splashSiteName,
+      // واقعیت زمان بیلد | همیشه از داخل اپ میآید، نه از سرور.
+      splashLogoBundledUrl: splashLogoBundledUrl,
+    );
+
+    return base.withSplash(decoded);
   }
 
   Future<void> cacheSplash() async {
@@ -572,7 +607,10 @@ class AppConfig {
       await prefs.setString('wptf_app_icon_url', appIconUrl);
       await prefs.setString('wptf_splash_url', splashImageUrl);
       await prefs.setString('wptf_splash_logo_url', splashLogoUrl);
-      await prefs.setString('wptf_splash_logo_bundled_url', splashLogoBundledUrl);
+      await prefs.setString(
+        'wptf_splash_logo_bundled_url',
+        splashLogoBundledUrl,
+      );
       await prefs.setBool('wptf_splash_show_logo', splashShowLogo);
       await prefs.setString('wptf_splash_site_icon', splashSiteIconUrl);
       await prefs.setString('wptf_splash_site_name', splashSiteName);
@@ -580,7 +618,10 @@ class AppConfig {
       await prefs.setString('wptf_splash_text', splashText);
       await prefs.setString('wptf_splash_text_color', splashTextHex);
       // تیک امضای محلی RSA بازار | کش میشود تا در لانچ بعدی قبل از کانفیگ تازه اعمال شود.
-      await prefs.setBool('wptf_bazaar_local_check', bazaarUseLocalSignatureCheck);
+      await prefs.setBool(
+        'wptf_bazaar_local_check',
+        bazaarUseLocalSignatureCheck,
+      );
       await prefs.setString('wptf_bazaar_rsa_key', bazaarRsaPublicKey);
     } catch (_) {}
   }
@@ -590,7 +631,9 @@ class AppConfig {
         .map((dynamic item) {
           if (item is Map<String, dynamic>) {
             return NativeBanner(
-              image: AppConfig.mapEmulatorUrl(((item['image'] as String?) ?? '').trim()),
+              image: AppConfig.mapEmulatorUrl(
+                ((item['image'] as String?) ?? '').trim(),
+              ),
               link: ((item['link'] as String?) ?? '').trim(),
             );
           }
@@ -611,7 +654,8 @@ Future<void> main() async {
   // درگاه پرداخت درون‌برنامه‌ای کافه‌بازار | فقط روی اندروید وصل میشود.
   // تیک امضای محلی RSA از تنظیم ۱۵ میآید | کش قبلی تا رسیدن کانفیگ تازه معتبر است.
   final SharedPreferences prefs = await SharedPreferences.getInstance();
-  final bool cachedLocalCheck = prefs.getBool('wptf_bazaar_local_check') ?? false;
+  final bool cachedLocalCheck =
+      prefs.getBool('wptf_bazaar_local_check') ?? false;
   final String cachedRsaKey = prefs.getString('wptf_bazaar_rsa_key') ?? '';
   final String? rsaKey;
   if (cachedLocalCheck && cachedRsaKey.isNotEmpty) {
@@ -694,6 +738,8 @@ class _SplashGateState extends State<_SplashGate>
 
   /// محو شدن پایانی | پس از آن اسپلش کاملاً برداشته میشود.
   static const Duration _fadeOut = Duration(milliseconds: 250);
+  static const Duration _remoteSettingsCooldown = Duration(seconds: 30);
+  static const Duration _resumeAnnouncementDelay = Duration(milliseconds: 500);
 
   late final AnimationController _fade;
   Timer? _minimumTimer;
@@ -707,6 +753,13 @@ class _SplashGateState extends State<_SplashGate>
   bool _contentReady = false;
   bool _dismissing = false;
   bool _splashGone = false;
+  bool _wasBackgrounded = false;
+  bool _remoteSettingsLoading = false;
+  bool _announcementDialogOpen = false;
+  bool _announcementCheckInProgress = false;
+  int _foregroundCycle = 0;
+  int _lastAnnouncementCycle = -1;
+  DateTime? _lastRemoteSettingsRefresh;
 
   @override
   void initState() {
@@ -731,6 +784,9 @@ class _SplashGateState extends State<_SplashGate>
             _current = pending;
           }
         });
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          unawaited(_maybeShowAnnouncement());
+        });
       });
 
     _minimumTimer = Timer(_minimumSplash, () {
@@ -744,7 +800,7 @@ class _SplashGateState extends State<_SplashGate>
     });
 
     // دریافت تنظیمات در پسزمینه (هم وبویو و هم نیتیو) کاملاً غیرمسدودکننده.
-    _syncRemoteSettings();
+    _syncRemoteSettings(force: true);
 
     // دیپ‌لینک بازگشت از درگاه پرداخت | wptoflutter://payment-result
     _listenDeepLinks();
@@ -882,12 +938,23 @@ class _SplashGateState extends State<_SplashGate>
     _fade.reverse();
   }
 
-  Future<void> _syncRemoteSettings() async {
+  Future<void> _syncRemoteSettings({bool force = false}) async {
+    if (_remoteSettingsLoading) return;
+    final DateTime now = DateTime.now();
+    if (!force &&
+        _lastRemoteSettingsRefresh != null &&
+        now.difference(_lastRemoteSettingsRefresh!) < _remoteSettingsCooldown) {
+      return;
+    }
+    _remoteSettingsLoading = true;
+    _lastRemoteSettingsRefresh = now;
     try {
-      final AppConfig updated = await widget.config
-          .refreshRemoteSettings()
-          .timeout(const Duration(seconds: 6), onTimeout: () => widget.config);
-      if (identical(updated, widget.config)) {
+      final AppConfig previous = _current;
+      final AppConfig updated = await previous.refreshRemoteSettings().timeout(
+        const Duration(seconds: 6),
+        onTimeout: () => previous,
+      );
+      if (identical(updated, previous)) {
         return;
       }
       updated.cacheSplash();
@@ -895,17 +962,109 @@ class _SplashGateState extends State<_SplashGate>
         // اسپلش تمام شده | تغییرات آزادانه اعمال میشود.
         if (mounted) {
           setState(() => _current = updated);
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            unawaited(_maybeShowAnnouncement());
+          });
         }
       } else {
         // وسط اسپلش | تا پایان آن نگه داشته میشود تا رنگ و لوگو ناگهان عوض نشوند.
         _pending = updated;
       }
-    } catch (_) {}
+    } catch (_) {
+    } finally {
+      _remoteSettingsLoading = false;
+    }
+  }
+
+  bool get _canPresentAnnouncement {
+    if (!mounted ||
+        !_splashGone ||
+        !_current.isNative ||
+        _announcementDialogOpen ||
+        _paymentLinksInFlight.isNotEmpty ||
+        BankPayments.instance.checkoutBusy) {
+      return false;
+    }
+    final ModalRoute<dynamic>? route = ModalRoute.of(context);
+    return route == null || route.isCurrent;
+  }
+
+  Future<void> _maybeShowAnnouncement() async {
+    if (_announcementCheckInProgress ||
+        _lastAnnouncementCycle == _foregroundCycle ||
+        !_canPresentAnnouncement) {
+      return;
+    }
+    _announcementCheckInProgress = true;
+    try {
+      final AppAnnouncement announcement = _current.announcement;
+      final AnnouncementSeenStore seenStore = AnnouncementSeenStore();
+      final NavigatorState navigator = Navigator.of(context);
+      if (!await seenStore.shouldShow(announcement) ||
+          !_canPresentAnnouncement ||
+          _lastAnnouncementCycle == _foregroundCycle ||
+          !navigator.mounted) {
+        return;
+      }
+
+      if (announcement.displayMode == 'once') {
+        await seenStore.markSeen(announcement);
+      }
+      _lastAnnouncementCycle = _foregroundCycle;
+      _announcementDialogOpen = true;
+      if (!mounted || !navigator.mounted) return;
+      final bool? openAction = await showDialog<bool>(
+        context: context,
+        barrierDismissible: true,
+        builder: (BuildContext context) => AnnouncementDialog(
+          announcement: announcement,
+          primaryColor: _current.primaryColor,
+        ),
+      );
+      _announcementDialogOpen = false;
+      if (openAction != true || !mounted || !navigator.mounted) return;
+
+      if (announcement.hasProductTarget) {
+        final WpItem product = WpItem.fromMap(announcement.productPayload!);
+        navigator.push<void>(
+          MaterialPageRoute<void>(
+            builder: (_) => NativeDetailScreen(item: product, config: _current),
+          ),
+        );
+      } else {
+        final Uri? uri = announcement.validLinkUri;
+        if (uri != null) {
+          navigator.push<void>(
+            MaterialPageRoute<void>(
+              builder: (_) => NativeWebViewScreen(
+                title: announcement.title,
+                url: AppConfig.mapEmulatorUrl(uri.toString()),
+              ),
+            ),
+          );
+        }
+      }
+    } catch (_) {
+    } finally {
+      _announcementDialogOpen = false;
+      _announcementCheckInProgress = false;
+    }
+  }
+
+  Future<void> _refreshAndShowAnnouncement() async {
+    await Future<void>.delayed(_resumeAnnouncementDelay);
+    if (!mounted || !_splashGone || !_canPresentAnnouncement) return;
+    await _syncRemoteSettings();
+    if (mounted) await _maybeShowAnnouncement();
   }
 
   /// بازگشت به اپ از دیالوگ پرداخت بازار | اتصال و بازیابی خریدهای مصرفنشده.
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.hidden) {
+      _wasBackgrounded = true;
+    }
     if (state != AppLifecycleState.resumed) {
       return;
     }
@@ -916,6 +1075,11 @@ class _SplashGateState extends State<_SplashGate>
       BazaarPayments.instance.recoverPurchases();
     } else {
       BazaarPayments.instance.connect();
+    }
+    if (_wasBackgrounded) {
+      _wasBackgrounded = false;
+      _foregroundCycle++;
+      unawaited(_refreshAndShowAnnouncement());
     }
   }
 
@@ -1028,7 +1192,8 @@ class _WebViewHomeScreenState extends State<WebViewHomeScreen> {
     super.initState();
     final Uri siteUri = Uri.tryParse(widget.config.siteUrl) ?? Uri();
     final String siteHost = siteUri.host.toLowerCase();
-    _isLocalSite = siteHost == 'localhost' ||
+    _isLocalSite =
+        siteHost == 'localhost' ||
         siteHost == '127.0.0.1' ||
         siteHost == '10.0.2.2';
     _controller = WebViewController()
@@ -1038,7 +1203,13 @@ class _WebViewHomeScreenState extends State<WebViewHomeScreen> {
         NavigationDelegate(
           onNavigationRequest: (NavigationRequest request) {
             const List<String> externalSchemes = <String>[
-              'tel', 'mailto', 'sms', 'whatsapp', 'intent', 'geo', 'market',
+              'tel',
+              'mailto',
+              'sms',
+              'whatsapp',
+              'intent',
+              'geo',
+              'market',
             ];
             final Uri? uri = Uri.tryParse(request.url);
             final String scheme = (uri?.scheme ?? '').toLowerCase();
@@ -1134,7 +1305,9 @@ class _WebViewHomeScreenState extends State<WebViewHomeScreen> {
                 value: _progress,
                 minHeight: 3,
                 backgroundColor: Colors.grey.shade200,
-                valueColor: AlwaysStoppedAnimation<Color>(widget.config.primaryColor),
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  widget.config.primaryColor,
+                ),
               ),
             Expanded(
               child: Stack(
@@ -1181,7 +1354,11 @@ class OfflineErrorScreen extends StatelessWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.wifi_off_rounded, size: 72, color: config.primaryColor),
+                    Icon(
+                      Icons.wifi_off_rounded,
+                      size: 72,
+                      color: config.primaryColor,
+                    ),
                     const SizedBox(height: 20),
                     Text(
                       'اتصال اینترنت برقرار نیست',
@@ -1209,7 +1386,10 @@ class OfflineErrorScreen extends StatelessWidget {
                       label: const Text('تلاش مجدد'),
                       style: FilledButton.styleFrom(
                         backgroundColor: config.primaryColor,
-                        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 28,
+                          vertical: 14,
+                        ),
                       ),
                     ),
                   ],

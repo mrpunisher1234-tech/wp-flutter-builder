@@ -9,6 +9,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'cart_screen.dart';
 import 'categories_screen.dart';
 import 'api_page.dart';
+import 'announcement.dart';
 import 'main.dart';
 import 'product_reviews.dart';
 import 'profile_screen.dart';
@@ -31,6 +32,122 @@ class Dk {
     Color(0xFFD22C4E),
     Color(0xFFEE384E),
   ];
+}
+
+class AnnouncementDialog extends StatelessWidget {
+  const AnnouncementDialog({
+    super.key,
+    required this.announcement,
+    required this.primaryColor,
+  });
+
+  final AppAnnouncement announcement;
+  final Color primaryColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final String imageUrl = AppConfig.mapEmulatorUrl(announcement.imageUrl);
+    return Directionality(
+      textDirection: TextDirection.rtl,
+      child: Dialog(
+        backgroundColor: Colors.white,
+        surfaceTintColor: Colors.transparent,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        clipBehavior: Clip.antiAlias,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 440, maxHeight: 680),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              if (imageUrl.isNotEmpty)
+                SizedBox(
+                  height: 188,
+                  child: Image.network(
+                    imageUrl,
+                    fit: BoxFit.cover,
+                    errorBuilder:
+                        (
+                          BuildContext context,
+                          Object error,
+                          StackTrace? stackTrace,
+                        ) => ColoredBox(
+                          color: Dk.surface2,
+                          child: Center(
+                            child: Icon(
+                              Icons.campaign_outlined,
+                              size: 42,
+                              color: primaryColor.withValues(alpha: 0.72),
+                            ),
+                          ),
+                        ),
+                  ),
+                ),
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.fromLTRB(22, 22, 22, 10),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      Text(
+                        announcement.title,
+                        textAlign: TextAlign.start,
+                        style: const TextStyle(
+                          color: Dk.text1,
+                          fontSize: 19,
+                          height: 1.5,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        announcement.message,
+                        textAlign: TextAlign.start,
+                        style: const TextStyle(
+                          color: Dk.text2,
+                          fontSize: 14,
+                          height: 1.9,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(18, 8, 18, 18),
+                child: Row(
+                  children: <Widget>[
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(false),
+                      child: const Text('بستن'),
+                    ),
+                    const Spacer(),
+                    if (announcement.hasAction)
+                      FilledButton(
+                        style: FilledButton.styleFrom(
+                          backgroundColor: primaryColor,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 22,
+                            vertical: 12,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        onPressed: () => Navigator.of(context).pop(true),
+                        child: Text(announcement.buttonText),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 /// ویژگی محصول (رنگ، سایز، گارانتی…)
@@ -99,12 +216,12 @@ class WpItem {
   bool get isProduct => type == 'product';
 
   factory WpItem.fromMap(Map<String, dynamic> map) {
-    final Map<String, dynamic> product =
-        map['product'] is Map<String, dynamic>
-            ? map['product'] as Map<String, dynamic>
-            : <String, dynamic>{};
-    final List<dynamic> categories =
-        map['categories'] is List ? map['categories'] as List<dynamic> : const <dynamic>[];
+    final Map<String, dynamic> product = map['product'] is Map<String, dynamic>
+        ? map['product'] as Map<String, dynamic>
+        : <String, dynamic>{};
+    final List<dynamic> categories = map['categories'] is List
+        ? map['categories'] as List<dynamic>
+        : const <dynamic>[];
 
     return WpItem(
       id: (map['id'] as num?)?.toInt() ?? 0,
@@ -121,40 +238,51 @@ class WpItem {
       salePrice: (product['sale_price'] as String?) ?? '',
       sku: (product['sku'] as String?) ?? '',
       inStock: product['in_stock'] == null ? true : product['in_stock'] == true,
-      purchasable:
-          product['purchasable'] == null ? true : product['purchasable'] == true,
+      purchasable: product['purchasable'] == null
+          ? true
+          : product['purchasable'] == true,
       onSale: product['on_sale'] == true,
       stockQuantity: (product['stock_quantity'] as num?)?.toInt(),
       rating: (product['rating'] as num?)?.toDouble() ?? 0,
       reviewsCount: (product['reviews_count'] as num?)?.toInt() ?? 0,
-      galleryImages: (product['gallery_images'] as List?)
-              ?.map((dynamic url) =>
-                  AppConfig.mapEmulatorUrl((url as String? ?? '').trim()))
+      galleryImages:
+          (product['gallery_images'] as List?)
+              ?.map(
+                (dynamic url) =>
+                    AppConfig.mapEmulatorUrl((url as String? ?? '').trim()),
+              )
               .where((String url) => url.isNotEmpty)
               .toList(growable: false) ??
           const <String>[],
-      attributes: (product['attributes'] as List?)
+      attributes:
+          (product['attributes'] as List?)
               ?.whereType<Map<String, dynamic>>()
-              .map((Map<String, dynamic> attribute) => WpAttribute(
-                    name: (attribute['name'] as String?) ?? '',
-                    slug: (attribute['slug'] as String?) ?? '',
-                    options: (attribute['options'] as List?)
-                            ?.whereType<String>()
-                            .toList(growable: false) ??
-                        const <String>[],
-                    variation: attribute['variation'] == true,
-                  ))
+              .map(
+                (Map<String, dynamic> attribute) => WpAttribute(
+                  name: (attribute['name'] as String?) ?? '',
+                  slug: (attribute['slug'] as String?) ?? '',
+                  options:
+                      (attribute['options'] as List?)
+                          ?.whereType<String>()
+                          .toList(growable: false) ??
+                      const <String>[],
+                  variation: attribute['variation'] == true,
+                ),
+              )
               .toList(growable: false) ??
           const <WpAttribute>[],
-      relatedProducts: (product['related_products'] as List?)
+      relatedProducts:
+          (product['related_products'] as List?)
               ?.whereType<Map<String, dynamic>>()
               .map(WpItem.fromMap)
               .toList(growable: false) ??
           const <WpItem>[],
       categoryNames: categories
           .whereType<Map>()
-          .map((dynamic category) =>
-              ((category.cast<String, dynamic>())['name'] as String?) ?? '')
+          .map(
+            (dynamic category) =>
+                ((category.cast<String, dynamic>())['name'] as String?) ?? '',
+          )
           .where((String name) => name.isNotEmpty)
           .toList(growable: false),
     );
@@ -166,8 +294,10 @@ class WpItem {
 String priceIntegerPart(String raw) {
   final String trimmed = raw.trim();
   final int dot = trimmed.indexOf('.');
-  return (dot == -1 ? trimmed : trimmed.substring(0, dot))
-      .replaceAll(RegExp(r'[^0-9]'), '');
+  return (dot == -1 ? trimmed : trimmed.substring(0, dot)).replaceAll(
+    RegExp(r'[^0-9]'),
+    '',
+  );
 }
 
 String formatToman(String raw) {
@@ -180,8 +310,30 @@ String formatToman(String raw) {
     (Match match) => '${match[1]},',
   );
 
-  const List<String> en = <String>['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
-  const List<String> fa = <String>['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
+  const List<String> en = <String>[
+    '0',
+    '1',
+    '2',
+    '3',
+    '4',
+    '5',
+    '6',
+    '7',
+    '8',
+    '9',
+  ];
+  const List<String> fa = <String>[
+    '۰',
+    '۱',
+    '۲',
+    '۳',
+    '۴',
+    '۵',
+    '۶',
+    '۷',
+    '۸',
+    '۹',
+  ];
   String result = withCommas;
   for (int i = 0; i < 10; i++) {
     result = result.replaceAll(en[i], fa[i]);
@@ -191,8 +343,30 @@ String formatToman(String raw) {
 
 // --- تبدیل ارقام به فارسی (برای تایمر و شمارنده‌ها) ---
 String toPersianDigits(String input) {
-  const List<String> en = <String>['0', '1', '2', '3', '4', '5', '6', '7', '8', '9'];
-  const List<String> fa = <String>['۰', '۱', '۲', '۳', '۴', '۵', '۶', '۷', '۸', '۹'];
+  const List<String> en = <String>[
+    '0',
+    '1',
+    '2',
+    '3',
+    '4',
+    '5',
+    '6',
+    '7',
+    '8',
+    '9',
+  ];
+  const List<String> fa = <String>[
+    '۰',
+    '۱',
+    '۲',
+    '۳',
+    '۴',
+    '۵',
+    '۶',
+    '۷',
+    '۸',
+    '۹',
+  ];
   String result = input;
   for (int i = 0; i < 10; i++) {
     result = result.replaceAll(en[i], fa[i]);
@@ -290,15 +464,14 @@ class _NativeHomeScreenState extends State<NativeHomeScreen> {
 
     try {
       final int page = loadMore ? _productsPage + 1 : 1;
-      final Uri uri = Uri.parse(
-        '${widget.config.effectiveApiBaseUrl}posts',
-      ).replace(
-        queryParameters: <String, String>{
-          'per_page': '$_homePageSize',
-          'type': 'all',
-          'page': '$page',
-        },
-      );
+      final Uri uri = Uri.parse('${widget.config.effectiveApiBaseUrl}posts')
+          .replace(
+            queryParameters: <String, String>{
+              'per_page': '$_homePageSize',
+              'type': 'all',
+              'page': '$page',
+            },
+          );
 
       final ApiPage response = await fetchApiPage(uri);
       if (!mounted) return;
@@ -318,7 +491,9 @@ class _NativeHomeScreenState extends State<NativeHomeScreen> {
           _isLoading = false;
           _loadingMoreProducts = false;
         });
-        WidgetsBinding.instance.addPostFrameCallback((_) => _autoFillViewport());
+        WidgetsBinding.instance.addPostFrameCallback(
+          (_) => _autoFillViewport(),
+        );
       } else if (loadMore) {
         // خطای صفحه‌بندی: بی‌سروصدا متوقف می‌شود | محتوای موجود می‌ماند
         setState(() {
@@ -361,8 +536,8 @@ class _NativeHomeScreenState extends State<NativeHomeScreen> {
         setState(() {
           _categories = list.whereType<Map<String, dynamic>>().toList();
           _categoryCanvas = _categories.isNotEmpty
-              ? (( _categories.first['canvas'] as num?)?.toInt() ??
-                  widget.config.categoryCanvas)
+              ? ((_categories.first['canvas'] as num?)?.toInt() ??
+                    widget.config.categoryCanvas)
               : widget.config.categoryCanvas;
           _loadingCategories = false;
         });
@@ -382,7 +557,8 @@ class _NativeHomeScreenState extends State<NativeHomeScreen> {
   /// استارتاپ خارج باشند. خطا = اسلایدر مخفی، بقیه اپ سالم.
   Future<void> _fetchBanners() async {
     try {
-      final ApiPage response = await fetchApiPage(Uri.parse('${widget.config.effectiveApiBaseUrl}config'),
+      final ApiPage response = await fetchApiPage(
+        Uri.parse('${widget.config.effectiveApiBaseUrl}config'),
       );
       if (response.statusCode == 200) {
         final String body = response.body;
@@ -406,8 +582,10 @@ class _NativeHomeScreenState extends State<NativeHomeScreen> {
                     .take(4)
                     .toList(growable: false);
             _sliderInterval =
-                ((decoded['slider_interval'] as num?)?.toInt() ?? 5)
-                    .clamp(3, 15);
+                ((decoded['slider_interval'] as num?)?.toInt() ?? 5).clamp(
+                  3,
+                  15,
+                );
           });
         }
       }
@@ -472,16 +650,15 @@ class _NativeHomeScreenState extends State<NativeHomeScreen> {
 
     try {
       final int page = loadMore ? _categoryPage + 1 : 1;
-      final Uri uri = Uri.parse(
-        '${widget.config.effectiveApiBaseUrl}posts',
-      ).replace(
-        queryParameters: <String, String>{
-          'per_page': '$_homePageSize',
-          'type': 'product',
-          'category': _activeCategorySlug,
-          'page': '$page',
-        },
-      );
+      final Uri uri = Uri.parse('${widget.config.effectiveApiBaseUrl}posts')
+          .replace(
+            queryParameters: <String, String>{
+              'per_page': '$_homePageSize',
+              'type': 'product',
+              'category': _activeCategorySlug,
+              'page': '$page',
+            },
+          );
       final ApiPage response = await fetchApiPage(uri);
       if (!mounted) return;
       if (response.statusCode != 200) {
@@ -500,8 +677,9 @@ class _NativeHomeScreenState extends State<NativeHomeScreen> {
           .toList();
       if (!mounted) return;
       setState(() {
-        _categoryItems =
-            loadMore ? <WpItem>[..._categoryItems, ...fetched] : fetched;
+        _categoryItems = loadMore
+            ? <WpItem>[..._categoryItems, ...fetched]
+            : fetched;
         _categoryPage = page;
         _hasMoreCategoryItems = response.hasNextPage(page);
         _loadingCategoryItems = false;
@@ -614,9 +792,9 @@ class _NativeHomeScreenState extends State<NativeHomeScreen> {
           config: widget.config,
           // گیت دیدگاه: بازگشت به ریشه + پرش به تب پروفایل برای لاگین
           onGoToLogin: () {
-            Navigator.of(context).popUntil(
-              (Route<dynamic> route) => route.isFirst,
-            );
+            Navigator.of(
+              context,
+            ).popUntil((Route<dynamic> route) => route.isFirst);
             setState(() => _currentBottomNavIndex = 3);
           },
         ),
@@ -640,8 +818,9 @@ class _NativeHomeScreenState extends State<NativeHomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final List<WpItem> offers =
-        _items.where((WpItem item) => item.onSale && item.price.isNotEmpty).toList();
+    final List<WpItem> offers = _items
+        .where((WpItem item) => item.onSale && item.price.isNotEmpty)
+        .toList();
     // لیست محصولات بر اساس حالت: همه (عمومی) / دسته با اسلاگ (سروری) /
     // دسته بدون اسلاگ (فال‌بک فیلتر محلی)
     final List<WpItem> displayedItems;
@@ -651,14 +830,16 @@ class _NativeHomeScreenState extends State<NativeHomeScreen> {
       displayedItems = _categoryItems;
     } else {
       displayedItems = _items
-          .where((WpItem item) =>
-              item.categoryNames.contains(_selectedCategory))
+          .where(
+            (WpItem item) => item.categoryNames.contains(_selectedCategory),
+          )
           .toList();
     }
 
     // اگر فراخوانی API دسته‌بندی‌ها خالی بود، از نام دسته‌های خود محصولات
     // به‌عنوان جایگزین استفاده می‌کنیم تا نوار دایره‌ها هرگز خالی نماند.
-    final List<Map<String, dynamic>> effectiveCategories = _categories.isNotEmpty
+    final List<Map<String, dynamic>> effectiveCategories =
+        _categories.isNotEmpty
         ? _categories
         : (() {
             final Set<String> names = <String>{};
@@ -718,8 +899,7 @@ class _NativeHomeScreenState extends State<NativeHomeScreen> {
                       padding: const EdgeInsets.symmetric(horizontal: 14),
                       child: Row(
                         children: <Widget>[
-                          const Icon(Icons.search,
-                              color: Dk.text3, size: 20),
+                          const Icon(Icons.search, color: Dk.text3, size: 20),
                           const SizedBox(width: 8),
                           Text(
                             'جستجو در ${widget.config.appName}…',
@@ -737,123 +917,115 @@ class _NativeHomeScreenState extends State<NativeHomeScreen> {
             ),
           ),
         ),
-        body: _currentBottomNavIndex == 0 &&
+        body:
+            _currentBottomNavIndex == 0 &&
                 (_isLoading || _loadingCategories || _loadingBanners)
             ? _buildSkeletonHome()
             : _currentBottomNavIndex == 0 && _error != null
-                ? Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        Text(_error!, style: const TextStyle(color: Colors.red)),
-                        const SizedBox(height: 12),
-                        ElevatedButton(
-                          onPressed: _fetchProducts,
-                          child: const Text('تلاش مجدد'),
-                        ),
-                      ],
+            ? Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Text(_error!, style: const TextStyle(color: Colors.red)),
+                    const SizedBox(height: 12),
+                    ElevatedButton(
+                      onPressed: _fetchProducts,
+                      child: const Text('تلاش مجدد'),
                     ),
-                  )
-                : _currentBottomNavIndex == 0
-                    ? ListView(
-                        controller: _homeScroll,
-                        padding: const EdgeInsets.only(bottom: 16),
-                        children: <Widget>[
-                          // دایره‌های دسته‌بندی
-                          _CategoryCircles(
-                            categories: effectiveCategories,
-                            selected: _selectedCategory,
-                            accent: widget.config.primaryColor,
-                            circleSize:
-                                categoryCircleSize(_categoryCanvas),
-                            onSelect: _selectCategory,
+                  ],
+                ),
+              )
+            : _currentBottomNavIndex == 0
+            ? ListView(
+                controller: _homeScroll,
+                padding: const EdgeInsets.only(bottom: 16),
+                children: <Widget>[
+                  // دایره‌های دسته‌بندی
+                  _CategoryCircles(
+                    categories: effectiveCategories,
+                    selected: _selectedCategory,
+                    accent: widget.config.primaryColor,
+                    circleSize: categoryCircleSize(_categoryCanvas),
+                    onSelect: _selectCategory,
+                  ),
+
+                  // اسلایدر بنرها (تنظیم نیتیو شماره ۲) | روی سفید،
+                  // چسبیده به خط جداکننده‌ی استوری‌ها
+                  if (_banners.isNotEmpty)
+                    Container(
+                      color: Colors.white,
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: _BannerSlider(
+                        banners: _banners,
+                        interval: _sliderInterval,
+                        config: widget.config,
+                      ),
+                    ),
+
+                  // پیشنهاد شگفت‌انگیز (فقط محصولات تخفیف‌دار)
+                  if (offers.isNotEmpty)
+                    _OfferSection(
+                      offers: offers,
+                      countdownEnd: _offerCountdownEnd,
+                      onTap: _openDetail,
+                      onViewAll: () => Navigator.of(context).push(
+                        MaterialPageRoute<void>(
+                          builder: (_) => NativeOffersScreen(
+                            offers: offers,
+                            config: widget.config,
                           ),
+                        ),
+                      ),
+                    ),
 
-                          // اسلایدر بنرها (تنظیم نیتیو شماره ۲) | روی سفید،
-                          // چسبیده به خط جداکننده‌ی استوری‌ها
-                          if (_banners.isNotEmpty)
-                            Container(
-                              color: Colors.white,
-                              padding: const EdgeInsets.only(bottom: 12),
-                              child: _BannerSlider(
-                                banners: _banners,
-                                interval: _sliderInterval,
-                                config: widget.config,
-                              ),
-                            ),
+                  // گرید محصولات | کلید روی کل ناحیه است تا اسکرولِ
+                  // لحظه‌ی کلیک به اسکلتون هم برسد، نه فقط محتوا
+                  KeyedSubtree(
+                    key: _productGridKey,
+                    child: _buildProductArea(displayedItems),
+                  ),
 
-                          // پیشنهاد شگفت‌انگیز (فقط محصولات تخفیف‌دار)
-                          if (offers.isNotEmpty)
-                            _OfferSection(
-                              offers: offers,
-                              countdownEnd: _offerCountdownEnd,
-                              onTap: _openDetail,
-                              onViewAll: () => Navigator.of(context).push(
-                                MaterialPageRoute<void>(
-                                  builder: (_) => NativeOffersScreen(
-                                    offers: offers,
-                                    config: widget.config,
-                                  ),
-                                ),
-                              ),
-                            ),
-
-                          // گرید محصولات | کلید روی کل ناحیه است تا اسکرولِ
-                          // لحظه‌ی کلیک به اسکلتون هم برسد، نه فقط محتوا
-                          KeyedSubtree(
-                            key: _productGridKey,
-                            child: _buildProductArea(displayedItems),
-                          ),
-
-                          // اسکرول بی‌نهایت | لودر صفحه‌ی بعدی (متناسب با حالت)
-                          if (_selectedCategory == 'همه'
-                              ? _loadingMoreProducts
-                              : _loadingMoreCategoryItems)
-                            const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 20),
-                              child: Center(
-                                child: SizedBox(
-                                  width: 24,
-                                  height: 24,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2.5,
-                                  ),
-                                ),
-                              ),
-                            ),
-                        ],
-                      )
-                    : _currentBottomNavIndex == 1
-                        // تب شماره ۱: دسته‌بندی‌ها
-                        ? CategoriesScreen(config: widget.config)
-                        : _currentBottomNavIndex == 2
-                            // تب شماره ۲: سبد خرید اختصاصی
-                            ? CartView(
-                                config: widget.config,
-                                onGoToShop: () => setState(
-                                  () => _currentBottomNavIndex = 0,
-                                ),
-                              )
-                    : _currentBottomNavIndex == 3
-                        // تب شماره ۳: پروفایل و ورود با موبایل
-                        ? ProfileScreen(config: widget.config)
-                        : Center(
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: <Widget>[
-                                Icon(
-                                  Icons.construction_rounded,
-                                  size: 52,
-                                  color: Dk.text4,
-                                ),
-                                const SizedBox(height: 10),
-                                const Text(
-                                  'این بخش به‌زودی فعال می‌شود',
-                                  style: TextStyle(color: Dk.text2),
-                                ),
-                              ],
-                            ),
-                          ),
+                  // اسکرول بی‌نهایت | لودر صفحه‌ی بعدی (متناسب با حالت)
+                  if (_selectedCategory == 'همه'
+                      ? _loadingMoreProducts
+                      : _loadingMoreCategoryItems)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 20),
+                      child: Center(
+                        child: SizedBox(
+                          width: 24,
+                          height: 24,
+                          child: CircularProgressIndicator(strokeWidth: 2.5),
+                        ),
+                      ),
+                    ),
+                ],
+              )
+            : _currentBottomNavIndex == 1
+            // تب شماره ۱: دسته‌بندی‌ها
+            ? CategoriesScreen(config: widget.config)
+            : _currentBottomNavIndex == 2
+            // تب شماره ۲: سبد خرید اختصاصی
+            ? CartView(
+                config: widget.config,
+                onGoToShop: () => setState(() => _currentBottomNavIndex = 0),
+              )
+            : _currentBottomNavIndex == 3
+            // تب شماره ۳: پروفایل و ورود با موبایل
+            ? ProfileScreen(config: widget.config)
+            : Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Icon(Icons.construction_rounded, size: 52, color: Dk.text4),
+                    const SizedBox(height: 10),
+                    const Text(
+                      'این بخش به‌زودی فعال می‌شود',
+                      style: TextStyle(color: Dk.text2),
+                    ),
+                  ],
+                ),
+              ),
 
         // نوار ناوبری پایین صفحه | با بج زنده‌ی تعداد سبد خرید
         bottomNavigationBar: ListenableBuilder(
@@ -936,11 +1108,7 @@ class _HeaderLogo extends StatelessWidget {
       return const SizedBox.shrink();
     }
     // اسلات ثابت ۱۳۰×۳۶: عرض لوگو/نام هرچه باشد، سرچ‌باکس نمی‌پرد
-    return SizedBox(
-      width: 130,
-      height: 36,
-      child: _buildSlot(),
-    );
+    return SizedBox(width: 130, height: 36, child: _buildSlot());
   }
 
   Widget _buildSlot() {
@@ -1030,8 +1198,9 @@ class _CategoryCircles extends StatelessWidget {
             final Map<String, dynamic> category = categories[index];
             final String name = (category['name'] as String?) ?? '';
             if (name.isEmpty) return const SizedBox.shrink();
-            final String image =
-                AppConfig.mapEmulatorUrl((category['image'] as String?) ?? '');
+            final String image = AppConfig.mapEmulatorUrl(
+              (category['image'] as String?) ?? '',
+            );
             final bool isSelected = name == selected;
             return InkWell(
               borderRadius: BorderRadius.circular(10),
@@ -1112,7 +1281,9 @@ class _BannerSlider extends StatefulWidget {
 }
 
 class _BannerSliderState extends State<_BannerSlider> {
-  late final PageController _controller = PageController(viewportFraction: 0.92);
+  late final PageController _controller = PageController(
+    viewportFraction: 0.92,
+  );
   Timer? _timer;
   int _page = 0;
 
@@ -1169,13 +1340,13 @@ class _BannerSliderState extends State<_BannerSlider> {
           final VoidCallback? onTap = banner.link.isEmpty
               ? null
               : () => Navigator.of(context).push(
-                    MaterialPageRoute<void>(
-                      builder: (_) => NativeWebViewScreen(
-                        title: 'تبلیغ',
-                        url: _resolveBannerUrl(banner.link),
-                      ),
+                  MaterialPageRoute<void>(
+                    builder: (_) => NativeWebViewScreen(
+                      title: 'تبلیغ',
+                      url: _resolveBannerUrl(banner.link),
                     ),
-                  );
+                  ),
+                );
           return Padding(
             padding: const EdgeInsets.symmetric(horizontal: 4),
             child: InkWell(
@@ -1190,9 +1361,7 @@ class _BannerSliderState extends State<_BannerSlider> {
                     fit: BoxFit.cover,
                     width: double.infinity,
                     errorBuilder: (_, Object? error, StackTrace? trace) =>
-                        const Center(
-                      child: Icon(Icons.image, color: Dk.text4),
-                    ),
+                        const Center(child: Icon(Icons.image, color: Dk.text4)),
                   ),
                 ),
               ),
@@ -1270,8 +1439,7 @@ class _OfferCountdownState extends State<_OfferCountdown> {
       ];
     } else if (remaining.inHours > 0) {
       boxes = <Widget>[
-        _countdownBox(
-            '${toPersianDigits(remaining.inHours.toString())} ساعت'),
+        _countdownBox('${toPersianDigits(remaining.inHours.toString())} ساعت'),
         const SizedBox(width: 4),
         _countdownBox('${toPersianDigits(minutes.toString())} دقیقه'),
       ];
@@ -1350,11 +1518,7 @@ class _OfferSection extends StatelessWidget {
             padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
             child: Row(
               children: <Widget>[
-                const Icon(
-                  Icons.bolt_rounded,
-                  color: Colors.white,
-                  size: 20,
-                ),
+                const Icon(Icons.bolt_rounded, color: Colors.white, size: 20),
                 const SizedBox(width: 4),
                 const Text(
                   'پیشنهاد شگفت‌انگیز',
@@ -1423,17 +1587,17 @@ class _OfferSection extends StatelessWidget {
                                     ? Image.network(
                                         item.featuredImage,
                                         fit: BoxFit.contain,
-                                        errorBuilder: (_, Object? error,
-                                                StackTrace? trace) =>
-                                            const Icon(
-                                          Icons.image_not_supported,
-                                          color: Dk.text4,
-                                        ),
+                                        errorBuilder:
+                                            (
+                                              _,
+                                              Object? error,
+                                              StackTrace? trace,
+                                            ) => const Icon(
+                                              Icons.image_not_supported,
+                                              color: Dk.text4,
+                                            ),
                                       )
-                                    : const Icon(
-                                        Icons.image,
-                                        color: Dk.text4,
-                                      ),
+                                    : const Icon(Icons.image, color: Dk.text4),
                               ),
                               if (discount != null)
                                 Positioned(
@@ -1581,8 +1745,10 @@ class ProductGridCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final String? discount =
-        calcDiscountPercent(item.regularPrice, item.salePrice);
+    final String? discount = calcDiscountPercent(
+      item.regularPrice,
+      item.salePrice,
+    );
     final bool hasSale = item.onSale && item.salePrice.isNotEmpty;
 
     return InkWell(
@@ -1608,12 +1774,12 @@ class ProductGridCard extends StatelessWidget {
                           ? Image.network(
                               item.featuredImage,
                               fit: BoxFit.contain,
-                              errorBuilder: (_, Object? error,
-                                      StackTrace? trace) =>
-                                  const Icon(
-                                Icons.image_not_supported,
-                                color: Dk.text4,
-                              ),
+                              errorBuilder:
+                                  (_, Object? error, StackTrace? trace) =>
+                                      const Icon(
+                                        Icons.image_not_supported,
+                                        color: Dk.text4,
+                                      ),
                             )
                           : const Icon(Icons.image, color: Dk.text4),
                     ),
@@ -1732,7 +1898,8 @@ class ProductGridCard extends StatelessWidget {
                           listenable: CartManager.instance,
                           builder: (BuildContext context, Widget? child) {
                             final CartItem? cartItem = CartManager
-                                .instance.items
+                                .instance
+                                .items
                                 .cast<CartItem?>()
                                 .firstWhere(
                                   (CartItem? ci) => ci?.item.id == item.id,
@@ -1780,8 +1947,9 @@ class ProductGridCard extends StatelessWidget {
                                   ),
                                 ],
                               ),
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 7),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 7,
+                              ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: <Widget>[
@@ -1802,7 +1970,8 @@ class ProductGridCard extends StatelessWidget {
                                   // عدد تعداد به فارسی
                                   Padding(
                                     padding: const EdgeInsets.symmetric(
-                                        horizontal: 6),
+                                      horizontal: 6,
+                                    ),
                                     child: Text(
                                       toPersianDigits('$count'),
                                       style: const TextStyle(
@@ -1936,8 +2105,12 @@ class _NativeSearchScreenState extends State<NativeSearchScreen> {
       _hasMoreResults = false;
       _loadingMoreResults = false;
     });
-    final List<WpItem>? fetched =
-        await _fetchSearchPage(trimmed, 1, seq, showError: true);
+    final List<WpItem>? fetched = await _fetchSearchPage(
+      trimmed,
+      1,
+      seq,
+      showError: true,
+    );
     if (fetched == null || !mounted) {
       return; // جواب قدیمی یا خطای نمایش‌داده‌شده
     }
@@ -1985,15 +2158,14 @@ class _NativeSearchScreenState extends State<NativeSearchScreen> {
   }) async {
     try {
       // queryParameters کدگذاری درست فارسی/فاصله را هم تضمین می‌کند.
-      final Uri uri = Uri.parse(
-        '${widget.config.effectiveApiBaseUrl}posts',
-      ).replace(
-        queryParameters: <String, String>{
-          'per_page': '$_searchPageSize',
-          'search': query,
-          'page': '$page',
-        },
-      );
+      final Uri uri = Uri.parse('${widget.config.effectiveApiBaseUrl}posts')
+          .replace(
+            queryParameters: <String, String>{
+              'per_page': '$_searchPageSize',
+              'search': query,
+              'page': '$page',
+            },
+          );
       final ApiPage response = await fetchApiPage(uri);
       if (seq != _searchSeq || !mounted) return null;
       if (response.statusCode != 200) {
@@ -2094,7 +2266,9 @@ class _NativeSearchScreenState extends State<NativeSearchScreen> {
       return const SkeletonProductGrid();
     }
     if (_error != null) {
-      return Center(child: Text(_error!, style: const TextStyle(color: Colors.red)));
+      return Center(
+        child: Text(_error!, style: const TextStyle(color: Colors.red)),
+      );
     }
     final List<WpItem>? results = _results;
     if (results == null) {
@@ -2244,12 +2418,16 @@ class NativeDetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final String? discount =
-        calcDiscountPercent(item.regularPrice, item.salePrice);
+    final String? discount = calcDiscountPercent(
+      item.regularPrice,
+      item.salePrice,
+    );
     final bool hasSale = item.onSale && item.salePrice.isNotEmpty;
     final List<String> gallery = item.galleryImages.isNotEmpty
         ? item.galleryImages
-        : (item.featuredImage.isNotEmpty ? <String>[item.featuredImage] : <String>[]);
+        : (item.featuredImage.isNotEmpty
+              ? <String>[item.featuredImage]
+              : <String>[]);
 
     return Directionality(
       textDirection: TextDirection.rtl,
@@ -2266,6 +2444,53 @@ class NativeDetailScreen extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
+          actions: <Widget>[
+            ListenableBuilder(
+              listenable: CartManager.instance,
+              builder: (BuildContext context, Widget? child) {
+                final int count = CartManager.instance.totalCount;
+                return IconButton(
+                  tooltip: '\u0633\u0628\u062F \u062E\u0631\u06CC\u062F',
+                  onPressed: () {
+                    Navigator.of(context).push<void>(
+                      MaterialPageRoute<void>(
+                        builder: (BuildContext cartContext) => Directionality(
+                          textDirection: TextDirection.rtl,
+                          child: Scaffold(
+                            appBar: AppBar(
+                              title: const Text(
+                                '\u0633\u0628\u062F \u062E\u0631\u06CC\u062F',
+                              ),
+                            ),
+                            body: CartView(
+                              config: config,
+                              onGoToShop: () => Navigator.of(
+                                cartContext,
+                              ).popUntil(
+                                (Route<dynamic> route) => route.isFirst,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                  icon: Badge(
+                    isLabelVisible: count > 0,
+                    label: Text(
+                      toPersianDigits('$count'),
+                      style: const TextStyle(color: Colors.white),
+                    ),
+                    backgroundColor: Dk.discount,
+                    child: const Icon(
+                      Icons.shopping_bag_outlined,
+                      color: Dk.text1,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ],
           backgroundColor: Colors.white,
           foregroundColor: Dk.text1,
           elevation: 0.5,
@@ -2286,29 +2511,39 @@ class NativeDetailScreen extends StatelessWidget {
                         onTap: () => Navigator.of(context).push(
                           PageRouteBuilder<void>(
                             opaque: true,
-                            transitionDuration:
-                                const Duration(milliseconds: 250),
-                            pageBuilder: (_, Animation<double> __,
-                                    Animation<double> ___) =>
-                                _ImageViewerScreen(
-                              images: gallery,
-                              initialIndex: index,
+                            transitionDuration: const Duration(
+                              milliseconds: 250,
                             ),
-                            transitionsBuilder: (_, Animation<double> animation,
-                                Animation<double> __, Widget child) {
-                              return SlideTransition(
-                                position: Tween<Offset>(
-                                  begin: const Offset(0, 1),
-                                  end: Offset.zero,
-                                ).animate(
-                                  CurvedAnimation(
-                                    parent: animation,
-                                    curve: Curves.easeOutCubic,
-                                  ),
+                            pageBuilder:
+                                (
+                                  _,
+                                  Animation<double> __,
+                                  Animation<double> ___,
+                                ) => _ImageViewerScreen(
+                                  images: gallery,
+                                  initialIndex: index,
                                 ),
-                                child: child,
-                              );
-                            },
+                            transitionsBuilder:
+                                (
+                                  _,
+                                  Animation<double> animation,
+                                  Animation<double> __,
+                                  Widget child,
+                                ) {
+                                  return SlideTransition(
+                                    position:
+                                        Tween<Offset>(
+                                          begin: const Offset(0, 1),
+                                          end: Offset.zero,
+                                        ).animate(
+                                          CurvedAnimation(
+                                            parent: animation,
+                                            curve: Curves.easeOutCubic,
+                                          ),
+                                        ),
+                                    child: child,
+                                  );
+                                },
                           ),
                         ),
                         child: Container(
@@ -2318,8 +2553,9 @@ class NativeDetailScreen extends StatelessWidget {
                           child: Image.network(
                             gallery[index],
                             fit: BoxFit.contain,
-                            errorBuilder: (_, Object? error, StackTrace? trace) =>
-                                const SizedBox.shrink(),
+                            errorBuilder:
+                                (_, Object? error, StackTrace? trace) =>
+                                    const SizedBox.shrink(),
                           ),
                         ),
                       );
@@ -2401,8 +2637,9 @@ class NativeDetailScreen extends StatelessWidget {
                                         ),
                                         decoration: BoxDecoration(
                                           color: Dk.discount,
-                                          borderRadius:
-                                              BorderRadius.circular(999),
+                                          borderRadius: BorderRadius.circular(
+                                            999,
+                                          ),
                                         ),
                                         child: Text(
                                           discount,
@@ -2433,9 +2670,7 @@ class NativeDetailScreen extends StatelessWidget {
                                   style: TextStyle(
                                     fontSize: 16,
                                     fontWeight: FontWeight.w900,
-                                    color: hasSale
-                                        ? Dk.success
-                                        : Dk.text1,
+                                    color: hasSale ? Dk.success : Dk.text1,
                                   ),
                                 ),
                               ],
@@ -2578,9 +2813,12 @@ class NativeDetailScreen extends StatelessWidget {
                                           related.featuredImage,
                                           height: 110,
                                           fit: BoxFit.cover,
-                                          errorBuilder: (_, Object? error,
-                                                  StackTrace? trace) =>
-                                              const SizedBox(height: 110),
+                                          errorBuilder:
+                                              (
+                                                _,
+                                                Object? error,
+                                                StackTrace? trace,
+                                              ) => const SizedBox(height: 110),
                                         ),
                                       Padding(
                                         padding: const EdgeInsets.all(8),
@@ -2601,10 +2839,10 @@ class NativeDetailScreen extends StatelessWidget {
                                             if (related.price.isNotEmpty)
                                               Padding(
                                                 padding: const EdgeInsets.only(
-                                                    top: 4),
+                                                  top: 4,
+                                                ),
                                                 child: Text(
-                                                  formatToman(
-                                                      related.price),
+                                                  formatToman(related.price),
                                                   style: const TextStyle(
                                                     fontSize: 12,
                                                     fontWeight: FontWeight.w900,
@@ -2688,10 +2926,7 @@ class NativeDetailScreen extends StatelessWidget {
 /// نمایشگر تمام‌قد عکس محصول | پس‌زمینه مشکی، ورود از پایین، زوم پینچ و
 /// دابل‌تپ، لمس هر‌جا = بستن، بدون هیچ متنی
 class _ImageViewerScreen extends StatefulWidget {
-  const _ImageViewerScreen({
-    required this.images,
-    required this.initialIndex,
-  });
+  const _ImageViewerScreen({required this.images, required this.initialIndex});
 
   final List<String> images;
   final int initialIndex;
@@ -2701,8 +2936,9 @@ class _ImageViewerScreen extends StatefulWidget {
 }
 
 class _ImageViewerScreenState extends State<_ImageViewerScreen> {
-  late final PageController _pageController =
-      PageController(initialPage: widget.initialIndex);
+  late final PageController _pageController = PageController(
+    initialPage: widget.initialIndex,
+  );
   late int _index = widget.initialIndex;
   final TransformationController _zoom = TransformationController();
   Offset? _doubleTapPosition;
@@ -2722,7 +2958,12 @@ class _ImageViewerScreenState extends State<_ImageViewerScreen> {
     final Offset position = _doubleTapPosition ?? Offset.zero;
     const double scale = 2.5;
     _zoom.value = Matrix4.identity()
-      ..translateByDouble(-position.dx * (scale - 1), -position.dy * (scale - 1), 0, 1)
+      ..translateByDouble(
+        -position.dx * (scale - 1),
+        -position.dy * (scale - 1),
+        0,
+        1,
+      )
       ..scaleByDouble(scale, scale, 1, 1);
   }
 
@@ -2754,10 +2995,10 @@ class _ImageViewerScreenState extends State<_ImageViewerScreen> {
                       fit: BoxFit.contain,
                       errorBuilder: (_, Object? error, StackTrace? trace) =>
                           const Icon(
-                        Icons.image_not_supported,
-                        color: Colors.white24,
-                        size: 48,
-                      ),
+                            Icons.image_not_supported,
+                            color: Colors.white24,
+                            size: 48,
+                          ),
                     ),
                   ),
                 );
@@ -2787,10 +3028,7 @@ class _ImageViewerScreenState extends State<_ImageViewerScreen> {
                   child: Text(
                     '${toPersianDigits('${_index + 1}')} / '
                     '${toPersianDigits('${widget.images.length}')}',
-                    style: const TextStyle(
-                      color: Colors.white70,
-                      fontSize: 12,
-                    ),
+                    style: const TextStyle(color: Colors.white70, fontSize: 12),
                   ),
                 ),
               ),
@@ -2832,7 +3070,11 @@ class NativeWebViewScreen extends StatefulWidget {
   final String title;
   final String url;
 
-  const NativeWebViewScreen({super.key, required this.title, required this.url});
+  const NativeWebViewScreen({
+    super.key,
+    required this.title,
+    required this.url,
+  });
 
   @override
   State<NativeWebViewScreen> createState() => _NativeWebViewScreenState();
@@ -2886,14 +3128,25 @@ class _NativeWebViewScreenState extends State<NativeWebViewScreen> {
             final Uri? uri = Uri.tryParse(request.url);
             final String scheme = (uri?.scheme ?? '').toLowerCase();
             const List<String> externalSchemes = <String>[
-              'tel', 'mailto', 'sms', 'whatsapp', 'intent', 'geo', 'market',
-              'tg', 'instagram', 'telegram', 'eitaa',
+              'tel',
+              'mailto',
+              'sms',
+              'whatsapp',
+              'intent',
+              'geo',
+              'market',
+              'tg',
+              'instagram',
+              'telegram',
+              'eitaa',
             ];
             if (externalSchemes.contains(scheme)) {
               return NavigationDecision.prevent;
             }
             // شبیهساز اندروید | میزبان محلی به 10.0.2.2 نگاشت میشود.
-            if (Platform.isAndroid && (scheme == 'http' || scheme == 'https') && uri != null) {
+            if (Platform.isAndroid &&
+                (scheme == 'http' || scheme == 'https') &&
+                uri != null) {
               final String host = uri.host.toLowerCase();
               if (host == 'localhost' || host == '127.0.0.1') {
                 final Uri mapped = uri.replace(host: '10.0.2.2');
