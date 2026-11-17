@@ -39,7 +39,7 @@ void main() {
           'button_text': 'خرید',
           'target_type': 'product',
           'product_id': 73,
-          'display_mode': 'once',
+          'max_shows': 2,
           'product': _productAnnouncement.productPayload,
         },
       });
@@ -47,6 +47,7 @@ void main() {
       expect(config.announcement.isDisplayable, isTrue);
       expect(config.announcement.title, 'پیشنهاد ویژه');
       expect(config.announcement.hasProductTarget, isTrue);
+      expect(config.announcement.maxShows, 2);
       expect(config.announcement.productPayload?['id'], 73);
 
       final AppConfig withSplash = config.withSplash(<String, dynamic>{
@@ -80,11 +81,11 @@ void main() {
         'id': 'remote-v3',
         'title': 'خبر تازه',
         'message': 'از سرور دریافت شد',
-        'display_mode': 'every_open',
+        'max_shows': 0,
       },
     });
     expect(refreshed.announcement.id, 'remote-v3');
-    expect(refreshed.announcement.displayMode, 'every_open');
+    expect(refreshed.announcement.maxShows, 0);
     expect(refreshed.announcement.message, 'از سرور دریافت شد');
 
     final AppConfig omitted = initial.withRemoteSettings(<String, dynamic>{});
@@ -103,10 +104,14 @@ void main() {
         await store.shouldShow(_productAnnouncement, preferences: preferences),
         isTrue,
       );
-      await store.markSeen(_productAnnouncement, preferences: preferences);
+      await store.markShown(_productAnnouncement, preferences: preferences);
       expect(
-        preferences.getString(AnnouncementSeenStore.preferenceKey),
+        preferences.getString(AnnouncementSeenStore.seenIdPreferenceKey),
         'sale-v2',
+      );
+      expect(
+        preferences.getInt(AnnouncementSeenStore.seenCountPreferenceKey),
+        1,
       );
       expect(
         await store.shouldShow(_productAnnouncement, preferences: preferences),
@@ -126,18 +131,28 @@ void main() {
     },
   );
 
-  test('display modes show once per ID or every foreground cycle', () {
+  test('display policy respects per-ID counts and unlimited mode', () {
     expect(
       AnnouncementDisplayPolicy.shouldShow(
         announcement: _productAnnouncement,
         seenId: 'sale-v2',
+        seenCount: 1,
       ),
       isFalse,
     );
     expect(
       AnnouncementDisplayPolicy.shouldShow(
         announcement: _productAnnouncement,
+        seenId: 'sale-v2',
+        seenCount: 0,
+      ),
+      isTrue,
+    );
+    expect(
+      AnnouncementDisplayPolicy.shouldShow(
+        announcement: _productAnnouncement,
         seenId: 'another-id',
+        seenCount: 99,
       ),
       isTrue,
     );
@@ -146,12 +161,13 @@ void main() {
       id: 'open-v1',
       title: 'اطلاعیه',
       message: 'متن اطلاعیه',
-      displayMode: 'every_open',
+      maxShows: 0,
     );
     expect(
       AnnouncementDisplayPolicy.shouldShow(
         announcement: everyOpen,
         seenId: 'open-v1',
+        seenCount: 99,
       ),
       isTrue,
     );

@@ -47,46 +47,60 @@ class AnnouncementDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final String imageUrl = AppConfig.mapEmulatorUrl(announcement.imageUrl);
+    final ButtonStyle actionButtonStyle = FilledButton.styleFrom(
+      backgroundColor: primaryColor,
+      foregroundColor: Colors.white,
+      minimumSize: const Size(0, 44),
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      textStyle: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
+    );
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Dialog(
         backgroundColor: Colors.white,
         surfaceTintColor: Colors.transparent,
         insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         clipBehavior: Clip.antiAlias,
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 440, maxHeight: 680),
+          constraints: const BoxConstraints(maxWidth: 360, maxHeight: 680),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              if (imageUrl.isNotEmpty)
-                SizedBox(
-                  height: 188,
-                  child: Image.network(
-                    imageUrl,
-                    fit: BoxFit.cover,
-                    errorBuilder:
-                        (
-                          BuildContext context,
-                          Object error,
-                          StackTrace? stackTrace,
-                        ) => ColoredBox(
-                          color: Dk.surface2,
-                          child: Center(
+              if (imageUrl.isNotEmpty) ...<Widget>[
+                ColoredBox(
+                  color: const Color(0xFFF7F8FA),
+                  child: AspectRatio(
+                    aspectRatio: 16 / 9,
+                    child: Image.network(
+                      imageUrl,
+                      fit: BoxFit.contain,
+                      errorBuilder:
+                          (
+                            BuildContext context,
+                            Object error,
+                            StackTrace? stackTrace,
+                          ) => const Center(
                             child: Icon(
-                              Icons.campaign_outlined,
-                              size: 42,
-                              color: primaryColor.withValues(alpha: 0.72),
+                              Icons.image_not_supported_outlined,
+                              size: 32,
+                              color: Color(0xFFA2A2A2),
                             ),
                           ),
-                        ),
+                    ),
                   ),
                 ),
+                const Divider(
+                  height: 1,
+                  thickness: 1,
+                  color: Color(0xFFECEDEF),
+                ),
+              ],
               Flexible(
                 child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(22, 22, 22, 10),
+                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: <Widget>[
@@ -94,52 +108,74 @@ class AnnouncementDialog extends StatelessWidget {
                         announcement.title,
                         textAlign: TextAlign.start,
                         style: const TextStyle(
-                          color: Dk.text1,
-                          fontSize: 19,
+                          color: Color(0xFF1F1F1F),
+                          fontSize: 16,
                           height: 1.5,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 8),
                       Text(
                         announcement.message,
                         textAlign: TextAlign.start,
                         style: const TextStyle(
-                          color: Dk.text2,
-                          fontSize: 14,
-                          height: 1.9,
+                          color: Color(0xFF5C5C5C),
+                          fontSize: 13.5,
+                          height: 1.85,
                         ),
                       ),
                     ],
                   ),
                 ),
               ),
+              const Divider(
+                height: 1,
+                thickness: 1,
+                color: Color(0xFFECEDEF),
+              ),
               Padding(
-                padding: const EdgeInsets.fromLTRB(18, 8, 18, 18),
-                child: Row(
-                  children: <Widget>[
-                    TextButton(
-                      onPressed: () => Navigator.of(context).pop(false),
-                      child: const Text('بستن'),
-                    ),
-                    const Spacer(),
-                    if (announcement.hasAction)
-                      FilledButton(
-                        style: FilledButton.styleFrom(
-                          backgroundColor: primaryColor,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 22,
-                            vertical: 12,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
+                padding: const EdgeInsets.fromLTRB(20, 14, 20, 18),
+                child: SizedBox(
+                  height: 44,
+                  child: announcement.hasAction
+                      ? Row(
+                          children: <Widget>[
+                            Expanded(
+                              flex: 2,
+                              child: FilledButton(
+                                style: actionButtonStyle,
+                                onPressed: () => Navigator.of(
+                                  context,
+                                ).pop(true),
+                                child: Text(
+                                  announcement.buttonText,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: FilledButton(
+                                style: actionButtonStyle,
+                                onPressed: () => Navigator.of(
+                                  context,
+                                ).pop(false),
+                                child: const Text('بستن'),
+                              ),
+                            ),
+                          ],
+                        )
+                      : SizedBox(
+                          width: double.infinity,
+                          child: FilledButton(
+                            style: actionButtonStyle,
+                            onPressed: () => Navigator.of(
+                              context,
+                            ).pop(false),
+                            child: const Text('بستن'),
                           ),
                         ),
-                        onPressed: () => Navigator.of(context).pop(true),
-                        child: Text(announcement.buttonText),
-                      ),
-                  ],
                 ),
               ),
             ],

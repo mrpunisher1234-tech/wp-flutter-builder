@@ -1,9 +1,11 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:wp_flutter_app/api_page.dart';
 import 'package:wp_flutter_app/bank_payment.dart';
+import 'package:wp_flutter_app/bazaar_payment.dart';
 import 'package:wp_flutter_app/cart_screen.dart';
 import 'package:wp_flutter_app/native_mode.dart';
 
@@ -14,7 +16,7 @@ void main() {
     final Map<String, dynamic> product = <String, dynamic>{
       'id': 41,
       'title': 'Saved product',
-      'product': <String, dynamic>{'price': '120.00'},
+      'product': <String, dynamic>{'price': '120.00', 'sku': 'sku41'},
     };
     SharedPreferences.setMockInitialValues(<String, Object>{
       'wptf_persisted_cart': jsonEncode(<Map<String, dynamic>>[
@@ -38,6 +40,12 @@ void main() {
     final List<dynamic> saved = jsonDecode(prefs.getString('wptf_persisted_cart')!) as List<dynamic>;
     expect(saved.length, 2);
     expect((saved.first as Map<String, dynamic>)['quantity'], 3);
+    final Map<String, dynamic> savedItem =
+        (saved.first as Map<String, dynamic>)['item'] as Map<String, dynamic>;
+    expect(
+      (savedItem['product'] as Map<String, dynamic>)['sku'],
+      'sku41',
+    );
     cart.clearCart();
     await Future<void>.delayed(Duration.zero);
   });
@@ -144,6 +152,105 @@ void main() {
       await BankPayments.instance.load('https://other.example/api/'),
       isNotNull,
     );
+  });
+
+  test('checkout idempotency key survives retry and rotates with fingerprint', () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    const String base = 'https://shop.example/api/';
+    final String first = await BankPayments.instance.prepareIdempotencyKey(
+      base,
+      '41:2|coupon=',
+    );
+    final String retry = await BankPayments.instance.prepareIdempotencyKey(
+      base,
+      '41:2|coupon=',
+    );
+    final String changed = await BankPayments.instance.prepareIdempotencyKey(
+      base,
+      '41:3|coupon=',
+    );
+
+    expect(retry, first);
+    expect(changed, isNot(first));
+    await BankPayments.instance.clear(base);
+    final String afterClear =
+        await BankPayments.instance.prepareIdempotencyKey(
+      base,
+      '41:3|coupon=',
+    );
+    expect(afterClear, isNot(changed));
+  });
+
+  test('bazaar settlement confirms a consumed token with server order id',
+      () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    final HttpServer server =
+        await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    late String requestPath;
+    late Map<String, dynamic> requestBody;
+    final Future<void> responder = () async {
+      final HttpRequest request = await server.first;
+      requestPath = request.uri.path;
+      requestBody = jsonDecode(await utf8.decoder.bind(request).join())
+          as Map<String, dynamic>;
+      request.response.statusCode = HttpStatus.ok;
+      request.response.headers.contentType = ContentType.json;
+      request.response.write(jsonEncode(<String, dynamic>{
+        'credited': true,
+        'order_id': 712,
+        'status': 'verified',
+      }));
+      await request.response.close();
+    }();
+
+    try {
+      BazaarPayments.instance.init(
+        apiBase: 'http://127.0.0.1:${server.port}/',
+      );
+      final BazaarSettlement result =
+          await BazaarPayments.instance.settleAndWait('purchase-token-712');
+      await responder;
+      expect(requestPath, '/payment/bazaar/status');
+      expect(requestBody['purchase_token'], 'purchase-token-712');
+      expect(result.credited, isTrue);
+      expect(result.orderId, 712);
+    } finally {
+      await server.close(force: true);
+    }
+  });
+
+  test('bazaar settlement fails closed when missing queue is unconfirmed',
+      () async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      kPrefsPendingBazaarPurchases: '{broken',
+    });
+    final HttpServer server =
+        await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final Future<void> responder = () async {
+      final HttpRequest request = await server.first;
+      await utf8.decoder.bind(request).join();
+      request.response.statusCode = HttpStatus.ok;
+      request.response.headers.contentType = ContentType.json;
+      request.response.write(jsonEncode(<String, dynamic>{
+        'credited': false,
+        'order_id': 0,
+        'status': 'pending',
+      }));
+      await request.response.close();
+    }();
+
+    try {
+      BazaarPayments.instance.init(
+        apiBase: 'http://127.0.0.1:${server.port}/',
+      );
+      final BazaarSettlement result =
+          await BazaarPayments.instance.settleAndWait('unknown-token');
+      await responder;
+      expect(result.credited, isFalse);
+      expect(result.orderId, 0);
+    } finally {
+      await server.close(force: true);
+    }
   });
 
   test('pagination uses server page count even for full last pages', () {

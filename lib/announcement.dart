@@ -11,7 +11,7 @@ class AppAnnouncement {
     this.targetType = 'none',
     this.productId = 0,
     this.linkUrl = '',
-    this.displayMode = 'once',
+    this.maxShows = 1,
     this.productPayload,
   });
 
@@ -24,7 +24,7 @@ class AppAnnouncement {
   final String targetType;
   final int productId;
   final String linkUrl;
-  final String displayMode;
+  final int maxShows;
   final Map<String, dynamic>? productPayload;
 
   factory AppAnnouncement.fromMap(Map<dynamic, dynamic> map) {
@@ -48,9 +48,7 @@ class AppAnnouncement {
           : 'none',
       productId: _readInt(map['product_id']),
       linkUrl: _readString(map['link_url']),
-      displayMode: _readString(map['display_mode']) == 'every_open'
-          ? 'every_open'
-          : 'once',
+      maxShows: _readNonNegativeInt(map['max_shows'], fallback: 1),
       productPayload: rawProduct is Map
           ? rawProduct.map<String, dynamic>(
               (dynamic key, dynamic value) =>
@@ -98,7 +96,7 @@ class AppAnnouncement {
       targetType: targetType,
       productId: productId,
       linkUrl: linkUrl ?? this.linkUrl,
-      displayMode: displayMode,
+      maxShows: maxShows,
       productPayload: productPayload,
     );
   }
@@ -111,41 +109,80 @@ String _readString(dynamic value) => value is String ? value.trim() : '';
 int _readInt(dynamic value) =>
     value is num ? value.toInt() : int.tryParse('$value') ?? 0;
 
+int _readNonNegativeInt(dynamic value, {required int fallback}) {
+  if (value == null || '$value'.trim().isEmpty) return fallback;
+  final int? parsed = value is num
+      ? value.toInt()
+      : int.tryParse(value.toString().trim());
+  return parsed == null || parsed < 0 ? fallback : parsed;
+}
+
 class AnnouncementDisplayPolicy {
   const AnnouncementDisplayPolicy._();
 
   static bool shouldShow({
     required AppAnnouncement announcement,
     required String seenId,
+    required int seenCount,
   }) {
     if (!announcement.isDisplayable) return false;
-    return announcement.displayMode == 'every_open' ||
-        seenId != announcement.id;
+    if (announcement.maxShows == 0) return true;
+    final int effectiveCount = seenId == announcement.id && seenCount > 0
+        ? seenCount
+        : 0;
+    return effectiveCount < announcement.maxShows;
   }
 }
 
 class AnnouncementSeenStore {
-  static const String preferenceKey = 'wptf_seen_announcement_id';
+  static const String seenIdPreferenceKey = 'wptf_seen_announcement_id';
+  static const String seenCountPreferenceKey =
+      'wptf_seen_announcement_count';
 
   Future<bool> shouldShow(
     AppAnnouncement announcement, {
     SharedPreferences? preferences,
   }) async {
+    if (!announcement.isDisplayable) return false;
     final SharedPreferences prefs =
         preferences ?? await SharedPreferences.getInstance();
+    String seenId = prefs.getString(seenIdPreferenceKey) ?? '';
+    int seenCount;
+    if (seenId != announcement.id) {
+      seenId = announcement.id;
+      seenCount = 0;
+      await prefs.setString(seenIdPreferenceKey, seenId);
+      await prefs.setInt(seenCountPreferenceKey, seenCount);
+    } else {
+      final int? storedCount = prefs.getInt(seenCountPreferenceKey);
+      seenCount = storedCount == null ? 1 : (storedCount < 0 ? 0 : storedCount);
+      if (storedCount == null || storedCount < 0) {
+        await prefs.setInt(seenCountPreferenceKey, seenCount);
+      }
+    }
     return AnnouncementDisplayPolicy.shouldShow(
       announcement: announcement,
-      seenId: prefs.getString(preferenceKey) ?? '',
+      seenId: seenId,
+      seenCount: seenCount,
     );
   }
 
-  Future<void> markSeen(
+  Future<void> markShown(
     AppAnnouncement announcement, {
     SharedPreferences? preferences,
   }) async {
-    if (announcement.id.isEmpty) return;
+    if (announcement.id.isEmpty || announcement.maxShows == 0) return;
     final SharedPreferences prefs =
         preferences ?? await SharedPreferences.getInstance();
-    await prefs.setString(preferenceKey, announcement.id);
+    final String seenId = prefs.getString(seenIdPreferenceKey) ?? '';
+    int seenCount = 0;
+    if (seenId != announcement.id) {
+      await prefs.setString(seenIdPreferenceKey, announcement.id);
+      await prefs.setInt(seenCountPreferenceKey, 0);
+    } else {
+      final int storedCount = prefs.getInt(seenCountPreferenceKey) ?? 1;
+      seenCount = storedCount < 0 ? 0 : storedCount;
+    }
+    await prefs.setInt(seenCountPreferenceKey, seenCount + 1);
   }
 }

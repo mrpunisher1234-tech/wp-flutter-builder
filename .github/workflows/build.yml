@@ -536,14 +536,20 @@ jobs:
 
           echo "Native splash theme patched to ${BG} (day, night, v31, night-v31)."
 
-      - name: 'Patch Android Manifest (INTERNET + cleartext + hw accel + brand label + round icon)'
+      - name: 'Patch Android Manifest (INTERNET + conditional cleartext + hw accel + brand label + round icon)'
         run: |
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           if ! grep -q 'android.permission.INTERNET' "$MANIFEST"; then
             perl -0pi -e 's/<application/<uses-permission android:name="android.permission.INTERNET"\/>\n    <application/' "$MANIFEST"
           fi
-          if ! grep -q 'usesCleartextTraffic' "$MANIFEST"; then
-            perl -0pi -e 's/<application/<application\n        android:usesCleartextTraffic="true"/' "$MANIFEST"
+          CLEARTEXT="false"
+          case "$SITE_URL" in
+            http://*) CLEARTEXT="true" ;;
+          esac
+          if grep -q 'usesCleartextTraffic' "$MANIFEST"; then
+            perl -0pi -e "s/android:usesCleartextTraffic=\"[^\"]*\"/android:usesCleartextTraffic=\"$CLEARTEXT\"/" "$MANIFEST"
+          else
+            perl -0pi -e "s/<application/<application\n        android:usesCleartextTraffic=\"$CLEARTEXT\"/" "$MANIFEST"
           fi
           if ! grep -q 'hardwareAccelerated' "$MANIFEST"; then
             perl -0pi -e 's/<application/<application\n        android:hardwareAccelerated="true"/' "$MANIFEST"

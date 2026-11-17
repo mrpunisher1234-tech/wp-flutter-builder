@@ -5,7 +5,7 @@
         android:label="wp_flutter_app"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher"
-        android:usesCleartextTraffic="true"
+        android:usesCleartextTraffic="false"
         android:hardwareAccelerated="true">
         <activity
             android:name=".MainActivity"

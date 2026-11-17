@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -58,6 +59,43 @@ class BankPayments {
   bool checkoutBusy = false;
 
   String _storageKey(String apiBase) => 'wptf_pending_bank_order_$apiBase';
+  String _idempotencyStorageKey(String apiBase) =>
+      'wptf_checkout_idempotency_$apiBase';
+
+  Future<String> prepareIdempotencyKey(
+    String apiBase,
+    String fingerprint,
+  ) async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final String? raw = prefs.getString(_idempotencyStorageKey(apiBase));
+    if (raw != null && raw.isNotEmpty) {
+      try {
+        final Object? decoded = jsonDecode(raw);
+        if (decoded is Map<String, dynamic> &&
+            decoded['fingerprint'] == fingerprint) {
+          final String existing = (decoded['key'] ?? '').toString();
+          if (existing.isNotEmpty) return existing;
+        }
+      } catch (_) {
+        // رکورد ناسازگار با کلید تازه جایگزین می‌شود.
+      }
+    }
+
+    final Random random = Random.secure();
+    final String key = 'wptf_${List<int>.generate(16, (_) => random.nextInt(256))
+        .map((int byte) => byte.toRadixString(16).padLeft(2, '0'))
+        .join()}';
+    if (!await prefs.setString(
+      _idempotencyStorageKey(apiBase),
+      jsonEncode(<String, String>{
+        'key': key,
+        'fingerprint': fingerprint,
+      }),
+    )) {
+      throw StateError('Checkout idempotency key could not be saved');
+    }
+    return key;
+  }
 
   Future<PendingBankOrder?> load(String apiBase) async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -86,6 +124,7 @@ class BankPayments {
   Future<void> clear(String apiBase) async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     await prefs.remove(_storageKey(apiBase));
+    await prefs.remove(_idempotencyStorageKey(apiBase));
   }
 
   /// سفارش انبار دیگر قابل استفاده نیست؟ | وضعیت لغوشده/ناموفق یا سبد و آدرس
@@ -108,12 +147,12 @@ class BankPayments {
     if (!_completed.add(receipt)) return false;
     try {
       final PendingBankOrder? pending = await load(apiBase);
-      if (pending?.id == orderId) {
-        final SharedPreferences prefs = await SharedPreferences.getInstance();
-        if (!await prefs.remove(_storageKey(apiBase))) {
-          throw StateError('Pending order could not be cleared');
-        }
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      if (pending?.id == orderId &&
+          !await prefs.remove(_storageKey(apiBase))) {
+        throw StateError('Pending order could not be cleared');
       }
+      await prefs.remove(_idempotencyStorageKey(apiBase));
       return true;
     } catch (_) {
       _completed.remove(receipt);

@@ -506,6 +506,12 @@ class _NativeCheckoutScreenState extends State<NativeCheckoutScreen> {
   }
 
   Future<PendingBankOrder> _createOrder(HttpClient client, String token) async {
+    final String fingerprint = _cartFingerprint();
+    final String idempotencyKey = await BankPayments.instance
+        .prepareIdempotencyKey(
+      widget.config.effectiveApiBaseUrl,
+      fingerprint,
+    );
     final HttpClientRequest request = await client.postUrl(
       Uri.parse('${widget.config.effectiveApiBaseUrl}checkout/create-order',
           ),
@@ -515,6 +521,7 @@ class _NativeCheckoutScreenState extends State<NativeCheckoutScreen> {
     request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
     request.write(jsonEncode(<String, dynamic>{
       if (token.isNotEmpty) 'auth_token': token,
+      'idempotency_key': idempotencyKey,
       'name': _name.text.trim(),
       'phone': normalizePhone(_phone.text),
       'province': _stateCode,

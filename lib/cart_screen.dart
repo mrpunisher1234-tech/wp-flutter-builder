@@ -120,6 +120,7 @@ class CartManager extends ChangeNotifier {
                     'price': cartItem.item.price,
                     'regular_price': cartItem.item.regularPrice,
                     'sale_price': cartItem.item.salePrice,
+                    'sku': cartItem.item.sku,
                     'on_sale': cartItem.item.onSale,
                     'in_stock': cartItem.item.inStock,
                     'purchasable': cartItem.item.purchasable,

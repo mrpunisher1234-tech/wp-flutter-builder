@@ -599,13 +599,25 @@ class BazaarPayments {
   /// تسویهٔ صریح توکن برای چکاوت نیتیو | recovery را صدا میزند و نتیجهٔ
   /// ثبت سرور (و شناسهٔ سفارش ووکامرس) را برمیگرداند.
   Future<BazaarSettlement> settleAndWait(String token) async {
+    final String cleanToken = token.trim();
+    if (cleanToken.isEmpty) {
+      return const BazaarSettlement(credited: false);
+    }
     await recoverPurchases();
     final Map<String, PendingBazaarPurchase> queue = await _loadQueue();
-    final PendingBazaarPurchase? rec = queue[token];
-    if (rec == null) {
-      // مصرف و پاک شده | یعنی سرور ثبت کرده است.
-      return const BazaarSettlement(credited: true);
+    final PendingBazaarPurchase? rec = queue[cleanToken];
+    if (rec != null && rec.credited && rec.wcOrderId > 0) {
+      return BazaarSettlement(credited: true, orderId: rec.wcOrderId);
     }
-    return BazaarSettlement(credited: rec.credited, orderId: rec.wcOrderId);
+    // نبودن رکورد می‌تواند نتیجهٔ consume موفق، خرابی صف یا قطع اتصال باشد |
+    // فقط جدول سرور می‌تواند ثبت قطعی پرداخت و شناسهٔ سفارش را تأیید کند.
+    final ({bool credited, int orderId, String status}) outcome =
+        await _queryStatus(
+      rec ?? PendingBazaarPurchase(sku: '', token: cleanToken),
+    );
+    return BazaarSettlement(
+      credited: outcome.credited,
+      orderId: outcome.credited ? outcome.orderId : 0,
+    );
   }
 }

@@ -323,26 +323,59 @@ class AppConfig {
 
     try {
       final SharedPreferences prefs = await SharedPreferences.getInstance();
-      config = config.withSplash(<String, dynamic>{
-        'app_icon_url': prefs.getString('wptf_app_icon_url') ?? '',
-        'splash_logo_bundled_url':
-            prefs.getString('wptf_splash_logo_bundled_url') ?? '',
-        'app': <String, dynamic>{
-          'icon': <String, dynamic>{
-            'url': prefs.getString('wptf_app_icon_url') ?? '',
-          },
-          'splash': <String, dynamic>{
-            'url': prefs.getString('wptf_splash_url') ?? '',
-            'logo_url': prefs.getString('wptf_splash_logo_url') ?? '',
-            'show_logo': prefs.getBool('wptf_splash_show_logo') ?? true,
-            'site_icon_url': prefs.getString('wptf_splash_site_icon') ?? '',
-            'site_name': prefs.getString('wptf_splash_site_name') ?? '',
-            'bg_color': prefs.getString('wptf_splash_bg') ?? '',
-            'text': prefs.getString('wptf_splash_text') ?? '',
-            'text_color': prefs.getString('wptf_splash_text_color') ?? '',
-          },
-        },
-      });
+      final Map<String, dynamic> cached = <String, dynamic>{};
+      final Map<String, dynamic> cachedApp = <String, dynamic>{};
+      final Map<String, dynamic> cachedIcon = <String, dynamic>{};
+      final Map<String, dynamic> cachedSplash = <String, dynamic>{};
+
+      void copyString(
+        Map<String, dynamic> target,
+        String targetKey,
+        String preferenceKey,
+      ) {
+        if (prefs.containsKey(preferenceKey)) {
+          target[targetKey] = prefs.getString(preferenceKey) ?? '';
+        }
+      }
+
+      if (prefs.containsKey('wptf_app_icon_url')) {
+        final String value = prefs.getString('wptf_app_icon_url') ?? '';
+        cached['app_icon_url'] = value;
+        cachedIcon['url'] = value;
+      }
+      copyString(
+        cached,
+        'splash_logo_bundled_url',
+        'wptf_splash_logo_bundled_url',
+      );
+      copyString(cachedSplash, 'url', 'wptf_splash_url');
+      copyString(cachedSplash, 'logo_url', 'wptf_splash_logo_url');
+      if (prefs.containsKey('wptf_splash_show_logo')) {
+        cachedSplash['show_logo'] =
+            prefs.getBool('wptf_splash_show_logo') ?? true;
+      }
+      copyString(
+        cachedSplash,
+        'site_icon_url',
+        'wptf_splash_site_icon',
+      );
+      copyString(cachedSplash, 'site_name', 'wptf_splash_site_name');
+      copyString(cachedSplash, 'bg_color', 'wptf_splash_bg');
+      copyString(cachedSplash, 'text', 'wptf_splash_text');
+      copyString(cachedSplash, 'text_color', 'wptf_splash_text_color');
+
+      if (cachedIcon.isNotEmpty) {
+        cachedApp['icon'] = cachedIcon;
+      }
+      if (cachedSplash.isNotEmpty) {
+        cachedApp['splash'] = cachedSplash;
+      }
+      if (cachedApp.isNotEmpty) {
+        cached['app'] = cachedApp;
+      }
+      if (cached.isNotEmpty) {
+        config = config.withSplash(cached);
+      }
     } catch (_) {}
     return config;
   }
@@ -739,11 +772,14 @@ class _SplashGateState extends State<_SplashGate>
   /// محو شدن پایانی | پس از آن اسپلش کاملاً برداشته میشود.
   static const Duration _fadeOut = Duration(milliseconds: 250);
   static const Duration _remoteSettingsCooldown = Duration(seconds: 30);
+  static const Duration _remoteSettingsTimeout = Duration(seconds: 15);
+  static const Duration _remoteSettingsRetryDelay = Duration(seconds: 1);
   static const Duration _resumeAnnouncementDelay = Duration(milliseconds: 500);
 
   late final AnimationController _fade;
   Timer? _minimumTimer;
   Timer? _ceilingTimer;
+  Timer? _remoteSettingsRetryTimer;
   StreamSubscription<Uri>? _linkSub;
   final Set<String> _handledPaymentLinks = <String>{};
   final Set<String> _paymentLinksInFlight = <String>{};
@@ -755,6 +791,7 @@ class _SplashGateState extends State<_SplashGate>
   bool _splashGone = false;
   bool _wasBackgrounded = false;
   bool _remoteSettingsLoading = false;
+  bool _initialRemoteRetryScheduled = false;
   bool _announcementDialogOpen = false;
   bool _announcementCheckInProgress = false;
   int _foregroundCycle = 0;
@@ -947,17 +984,26 @@ class _SplashGateState extends State<_SplashGate>
       return;
     }
     _remoteSettingsLoading = true;
-    _lastRemoteSettingsRefresh = now;
     try {
       final AppConfig previous = _current;
       final AppConfig updated = await previous.refreshRemoteSettings().timeout(
-        const Duration(seconds: 6),
+        _remoteSettingsTimeout,
         onTimeout: () => previous,
       );
       if (identical(updated, previous)) {
+        if (force && !_initialRemoteRetryScheduled && mounted) {
+          _initialRemoteRetryScheduled = true;
+          _remoteSettingsRetryTimer = Timer(_remoteSettingsRetryDelay, () {
+            _remoteSettingsRetryTimer = null;
+            if (mounted) unawaited(_syncRemoteSettings(force: true));
+          });
+        }
         return;
       }
-      updated.cacheSplash();
+      _remoteSettingsRetryTimer?.cancel();
+      _remoteSettingsRetryTimer = null;
+      _lastRemoteSettingsRefresh = DateTime.now();
+      unawaited(updated.cacheSplash());
       if (_splashGone) {
         // اسپلش تمام شده | تغییرات آزادانه اعمال میشود.
         if (mounted) {
@@ -1007,9 +1053,7 @@ class _SplashGateState extends State<_SplashGate>
         return;
       }
 
-      if (announcement.displayMode == 'once') {
-        await seenStore.markSeen(announcement);
-      }
+      await seenStore.markShown(announcement);
       _lastAnnouncementCycle = _foregroundCycle;
       _announcementDialogOpen = true;
       if (!mounted || !navigator.mounted) return;
@@ -1088,6 +1132,7 @@ class _SplashGateState extends State<_SplashGate>
     WidgetsBinding.instance.removeObserver(this);
     _minimumTimer?.cancel();
     _ceilingTimer?.cancel();
+    _remoteSettingsRetryTimer?.cancel();
     _linkSub?.cancel();
     _fade.dispose();
     super.dispose();
