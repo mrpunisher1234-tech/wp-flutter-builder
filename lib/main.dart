@@ -719,6 +719,9 @@ class WpToFlutterApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
+        // فونت پایهٔ کل اپ | همهٔ متن‌ها (مثل عنوان/متن/دکمهٔ اعلان) از همین
+        // خانواده ارث میبرند؛ ارقام فارسی و لاتین هر دو در وزیرمتن هست.
+        fontFamily: 'Vazirmatn',
         scaffoldBackgroundColor: Colors.white,
         colorScheme: ColorScheme.fromSeed(
           seedColor: config.primaryColor,

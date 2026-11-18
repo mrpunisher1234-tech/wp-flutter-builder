@@ -34,6 +34,17 @@ class Dk {
   ];
 }
 
+// ---------------------------------------------------------------------------
+// پالت کارت اعلان | کاغذ گرم + مرکب + لهجهٔ رنگ برند.
+// ---------------------------------------------------------------------------
+const Color _paper = Color(0xFFFAF7F2);
+const Color _ink = Color(0xFF1C1917);
+const Color _muted = Color(0xFF857D71);
+const Color _lac = Color(0xFFE0452F);
+const Color _hairline = Color(0xFFE8E1D6);
+
+/// پنجرهٔ اعلان | کارت «ویترین» با عکس تمام‌عرض، قیمت قهرمان و مهر تخفیف.
+/// بستن با ضربدرِ روی عکس انجام میشود | دکمهٔ اصلی فقط مقصد را باز میکند.
 class AnnouncementDialog extends StatelessWidget {
   const AnnouncementDialog({
     super.key,
@@ -46,144 +57,515 @@ class AnnouncementDialog extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final String imageUrl = AppConfig.mapEmulatorUrl(announcement.imageUrl);
-    final ButtonStyle actionButtonStyle = FilledButton.styleFrom(
-      backgroundColor: primaryColor,
-      foregroundColor: Colors.white,
-      minimumSize: const Size(0, 44),
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      textStyle: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w700),
-    );
     return Directionality(
       textDirection: TextDirection.rtl,
       child: Dialog(
-        backgroundColor: Colors.white,
+        backgroundColor: Colors.transparent,
         surfaceTintColor: Colors.transparent,
-        insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 28),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        clipBehavior: Clip.antiAlias,
+        elevation: 0,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 360, maxHeight: 680),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              if (imageUrl.isNotEmpty) ...<Widget>[
-                ColoredBox(
-                  color: const Color(0xFFF7F8FA),
-                  child: AspectRatio(
-                    aspectRatio: 16 / 9,
-                    child: Image.network(
-                      imageUrl,
-                      fit: BoxFit.contain,
-                      errorBuilder:
-                          (
-                            BuildContext context,
-                            Object error,
-                            StackTrace? stackTrace,
-                          ) => const Center(
-                            child: Icon(
-                              Icons.image_not_supported_outlined,
-                              size: 32,
-                              color: Color(0xFFA2A2A2),
-                            ),
-                          ),
-                    ),
-                  ),
-                ),
-                const Divider(
-                  height: 1,
-                  thickness: 1,
-                  color: Color(0xFFECEDEF),
-                ),
-              ],
-              Flexible(
-                child: SingleChildScrollView(
-                  padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: <Widget>[
-                      Text(
-                        announcement.title,
-                        textAlign: TextAlign.start,
-                        style: const TextStyle(
-                          color: Color(0xFF1F1F1F),
-                          fontSize: 16,
-                          height: 1.5,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        announcement.message,
-                        textAlign: TextAlign.start,
-                        style: const TextStyle(
-                          color: Color(0xFF5C5C5C),
-                          fontSize: 13.5,
-                          height: 1.85,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              const Divider(
-                height: 1,
-                thickness: 1,
-                color: Color(0xFFECEDEF),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(20, 14, 20, 18),
-                child: SizedBox(
-                  height: 44,
-                  child: announcement.hasAction
-                      ? Row(
-                          children: <Widget>[
-                            Expanded(
-                              flex: 2,
-                              child: FilledButton(
-                                style: actionButtonStyle,
-                                onPressed: () => Navigator.of(
-                                  context,
-                                ).pop(true),
-                                child: Text(
-                                  announcement.buttonText,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: FilledButton(
-                                style: actionButtonStyle,
-                                onPressed: () => Navigator.of(
-                                  context,
-                                ).pop(false),
-                                child: const Text('بستن'),
-                              ),
-                            ),
-                          ],
-                        )
-                      : SizedBox(
-                          width: double.infinity,
-                          child: FilledButton(
-                            style: actionButtonStyle,
-                            onPressed: () => Navigator.of(
-                              context,
-                            ).pop(false),
-                            child: const Text('بستن'),
-                          ),
-                        ),
-                ),
-              ),
-            ],
+          constraints: const BoxConstraints(maxWidth: 360),
+          child: SingleChildScrollView(
+            child: SaleAnnouncementCard(
+              title: announcement.title.trim(),
+              message: announcement.message.trim(),
+              salePrice: announcement.salePrice.trim(),
+              regularPrice: announcement.regularPrice.trim(),
+              imageUrl: AppConfig.mapEmulatorUrl(announcement.imageUrl),
+              // بدون مقصد | همان دکمه نقش بستن را بازی میکند.
+              ctaLabel: announcement.hasAction
+                  ? announcement.buttonText
+                  : 'بستن',
+              onView: () => Navigator.of(context).pop(announcement.hasAction),
+              onClose: () => Navigator.of(context).pop(false),
+            ),
           ),
         ),
       ),
     );
   }
+}
+
+// ---------------------------------------------------------------------------
+// کارت «ویترین» اعلان فروش
+// ---------------------------------------------------------------------------
+class SaleAnnouncementCard extends StatelessWidget {
+  const SaleAnnouncementCard({
+    super.key,
+    required this.title,
+    required this.message,
+    required this.salePrice,
+    this.regularPrice = '',
+    this.imageUrl,
+    this.currency = 'تومان',
+    this.overline = 'پیشنهاد ویژه',
+    this.ctaLabel = 'مشاهده پیشنهاد',
+    this.onView,
+    this.onClose,
+  });
+
+  final String title;
+  final String message;
+  final String salePrice;
+  final String regularPrice;
+  final String? imageUrl;
+  final String currency;
+  final String overline;
+  final String ctaLabel;
+  final VoidCallback? onView;
+  final VoidCallback? onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final String sale = _formatAmount(salePrice);
+    final String regular = _formatAmount(regularPrice);
+    final int? saleN = _parseAmount(salePrice);
+    final int? regularN = _parseAmount(regularPrice);
+
+    final int? percent =
+        (saleN != null && regularN != null && regularN > 0 && saleN < regularN)
+        ? (((regularN - saleN) / regularN) * 100).round()
+        : null;
+    final bool hasSeal = percent != null && percent > 0 && percent < 100;
+    final String? savings =
+        (saleN != null && regularN != null && regularN > saleN)
+        ? _formatAmount((regularN - saleN).toString())
+        : null;
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: _paper,
+        borderRadius: BorderRadius.circular(26),
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.30),
+            blurRadius: 30,
+            offset: const Offset(0, 14),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          // ---- عکس: تمامعرض، نسبت 4:3 -----------------------------------
+          Stack(
+            children: <Widget>[
+              _Photo(url: imageUrl, semanticLabel: title),
+              const Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      stops: <double>[0, 0.3],
+                      colors: <Color>[Color(0x59000000), Colors.transparent],
+                    ),
+                  ),
+                ),
+              ),
+              PositionedDirectional(
+                top: 12,
+                end: 12,
+                child: _CloseButton(onTap: onClose),
+              ),
+            ],
+          ),
+
+          // ---- بدنه: ۲۲px روی عکس میآید → درز منحنی ---------------------
+          Container(
+            transform: Matrix4.translationValues(0, -22, 0),
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 2),
+            decoration: const BoxDecoration(
+              color: _paper,
+              borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                // برچسب بدون خط کنار + hr زیرش
+                Text(
+                  overline,
+                  style: const TextStyle(
+                    color: _lac,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                const Divider(height: 1, thickness: 1, color: _hairline),
+                const SizedBox(height: 12),
+
+                // عنوان + hr زیرش
+                Text(
+                  title,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: _ink,
+                    fontSize: 18,
+                    height: 1.55,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                const Divider(height: 1, thickness: 1, color: _hairline),
+                const SizedBox(height: 10),
+
+                // توضیحات + hr زیرش
+                Text(
+                  message,
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: _muted,
+                    fontSize: 13,
+                    height: 1.8,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Divider(height: 1, thickness: 1, color: _hairline),
+                const SizedBox(height: 16),
+
+                // ---- قیمت: قهرمان کارت + مهر تخفیف -----------------------
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          FittedBox(
+                            fit: BoxFit.scaleDown,
+                            alignment: AlignmentDirectional.centerStart,
+                            child: _PriceLine(
+                              amount: sale,
+                              currency: currency,
+                            ),
+                          ),
+                          if (regular.isNotEmpty ||
+                              savings != null) ...<Widget>[
+                            const SizedBox(height: 8),
+                            FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: AlignmentDirectional.centerStart,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: <Widget>[
+                                  if (regular.isNotEmpty) _Struck(regular),
+                                  if (regular.isNotEmpty && savings != null)
+                                    const SizedBox(width: 10),
+                                    if (savings != null)
+                                      Text(
+                                        '$savings $currency سود شما',
+                                        style: const TextStyle(
+                                          color: _lac,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    if (hasSeal) ...<Widget>[
+                      const SizedBox(width: 14),
+                      _DiscountSeal(percent: percent, color: _lac),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 20),
+
+                // ---- یک اکشن، تمامعرض، بدون فلش --------------------------
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: FilledButton(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: _ink,
+                      foregroundColor: _paper,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                      textStyle: const TextStyle(
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    onPressed: onView ?? () {},
+                    child: Text(ctaLabel),
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// اجزا
+// ---------------------------------------------------------------------------
+class _Photo extends StatelessWidget {
+  const _Photo({this.url, this.semanticLabel});
+
+  final String? url;
+  final String? semanticLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return AspectRatio(
+      aspectRatio: 4 / 3,
+      child: (url == null || url!.isEmpty)
+          ? const _PhotoFallback()
+          : Image.network(
+              url!,
+              fit: BoxFit.cover,
+              width: double.infinity,
+              height: double.infinity,
+              semanticLabel: semanticLabel,
+              loadingBuilder:
+                  (BuildContext c, Widget child, ImageChunkEvent? progress) =>
+                      progress == null
+                      ? child
+                      : const _PhotoFallback(loading: true),
+              errorBuilder: (_, __, ___) => const _PhotoFallback(),
+            ),
+    );
+  }
+}
+
+class _PhotoFallback extends StatelessWidget {
+  const _PhotoFallback({this.loading = false});
+
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: const Color(0xFFEFE8DC),
+      child: Center(
+        child: loading
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Color(0xFFC2B6A2),
+                ),
+              )
+            : const Icon(
+                Icons.image_outlined,
+                size: 40,
+                color: Color(0xFFC2B6A2),
+              ),
+      ),
+    );
+  }
+}
+
+class _PriceLine extends StatelessWidget {
+  const _PriceLine({required this.amount, required this.currency});
+
+  final String amount;
+  final String currency;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.baseline,
+      textBaseline: TextBaseline.alphabetic,
+      children: <Widget>[
+        Text(
+          amount.isEmpty ? '—' : amount,
+          style: const TextStyle(
+            color: _ink,
+            fontSize: 34,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(
+          currency,
+          style: const TextStyle(
+            color: _muted,
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _Struck extends StatelessWidget {
+  const _Struck(this.amount);
+
+  final String amount;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      alignment: Alignment.center,
+      children: <Widget>[
+        Text(
+          amount,
+          style: const TextStyle(
+            color: _muted,
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        Positioned.fill(
+          child: Align(
+            alignment: const Alignment(0, 0.08),
+            child: Container(height: 1.2, color: _muted),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _DiscountSeal extends StatelessWidget {
+  const _DiscountSeal({required this.percent, required this.color});
+
+  final int percent;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 62,
+      height: 62,
+      decoration: BoxDecoration(
+        color: color,
+        shape: BoxShape.circle,
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.16),
+            blurRadius: 12,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: <Widget>[
+          Text(
+            '${_faDigits(percent.toString())}٪',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 17,
+              fontWeight: FontWeight.w900,
+              height: 1.1,
+            ),
+          ),
+          const SizedBox(height: 1),
+          Text(
+            'تخفیف',
+            style: TextStyle(
+              color: Colors.white.withValues(alpha: 0.85),
+              fontSize: 9.5,
+              fontWeight: FontWeight.w700,
+              height: 1.2,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CloseButton extends StatelessWidget {
+  const _CloseButton({this.onTap});
+
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      onPressed: onTap ?? () {},
+      style: IconButton.styleFrom(
+        backgroundColor: _lac,
+        foregroundColor: Colors.white,
+        fixedSize: const Size(34, 34),
+        minimumSize: const Size(34, 34),
+        padding: EdgeInsets.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        shape: const CircleBorder(),
+      ),
+      icon: const Icon(Icons.close_rounded, size: 19),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// هلپرهای عدد فارسی
+// ---------------------------------------------------------------------------
+int? _parseAmount(String raw) {
+  final String digits = _asciiDigits(raw).replaceAll(RegExp(r'[^0-9]'), '');
+  return digits.isEmpty ? null : int.tryParse(digits);
+}
+
+String _formatAmount(String raw) {
+  final String trimmed = raw.trim();
+  if (trimmed.isEmpty) return '';
+  final int? n = _parseAmount(trimmed);
+  if (n == null) return _faDigits(trimmed);
+  final String s = n.toString();
+  final StringBuffer b = StringBuffer();
+  for (int i = 0; i < s.length; i++) {
+    b.write(s[i]);
+    final int rem = s.length - i - 1;
+    if (rem > 0 && rem % 3 == 0) b.write('٬');
+  }
+  return _faDigits(b.toString());
+}
+
+String _asciiDigits(String input) {
+  return input
+      .replaceAllMapped(
+        RegExp(r'[۰-۹]'),
+        (Match m) =>
+            String.fromCharCode(m.group(0)!.codeUnitAt(0) - 0x06F0 + 0x30),
+      )
+      .replaceAllMapped(
+        RegExp(r'[٠-٩]'),
+        (Match m) =>
+            String.fromCharCode(m.group(0)!.codeUnitAt(0) - 0x0660 + 0x30),
+      );
+}
+
+String _faDigits(String input) {
+  const List<String> fa = <String>[
+    '۰',
+    '۱',
+    '۲',
+    '۳',
+    '۴',
+    '۵',
+    '۶',
+    '۷',
+    '۸',
+    '۹',
+  ];
+  return input.replaceAllMapped(
+    RegExp(r'[0-9]'),
+    (Match m) => fa[m.group(0)!.codeUnitAt(0) - 0x30],
+  );
 }
 
 /// ویژگی محصول (رنگ، سایز، گارانتی…)

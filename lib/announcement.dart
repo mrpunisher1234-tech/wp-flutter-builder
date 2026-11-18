@@ -6,6 +6,8 @@ class AppAnnouncement {
     this.id = '',
     this.title = '',
     this.message = '',
+    this.salePrice = '',
+    this.regularPrice = '',
     this.imageUrl = '',
     this.buttonText = 'مشاهده',
     this.targetType = 'none',
@@ -19,6 +21,8 @@ class AppAnnouncement {
   final String id;
   final String title;
   final String message;
+  final String salePrice;
+  final String regularPrice;
   final String imageUrl;
   final String buttonText;
   final String targetType;
@@ -34,6 +38,8 @@ class AppAnnouncement {
       id: _readString(map['id']),
       title: _readString(map['title']),
       message: _readString(map['message']),
+      salePrice: _readString(map['sale_price']),
+      regularPrice: _readString(map['regular_price']),
       imageUrl: _readString(map['image_url']),
       buttonText: _readString(map['button_text']).isEmpty
           ? 'مشاهده'
@@ -91,6 +97,8 @@ class AppAnnouncement {
       id: id,
       title: title,
       message: message,
+      salePrice: salePrice,
+      regularPrice: regularPrice,
       imageUrl: imageUrl ?? this.imageUrl,
       buttonText: buttonText,
       targetType: targetType,
