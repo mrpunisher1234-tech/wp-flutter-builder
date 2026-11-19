@@ -186,6 +186,8 @@ class FavoritesManager extends ChangeNotifier {
             .map(_snapshotOf)
             .toList(growable: false),
         'category_names': item.categoryNames,
+        // تنظیم ۱۹ | اسلاگ دستهها | برای fallback همدسته در صفحهٔ جزئیات.
+        'category_slugs': item.categorySlugs,
       };
 
   WpItem _itemFromSnapshot(Map<String, dynamic> map) => WpItem(
@@ -242,6 +244,12 @@ class FavoritesManager extends ChangeNotifier {
                 ? map['category_names'] as List
                 : const <dynamic>[])
             .map((dynamic row) => '$row')
+            .toList(growable: false),
+        categorySlugs: (map['category_slugs'] is List
+                ? map['category_slugs'] as List
+                : const <dynamic>[])
+            .map((dynamic row) => '$row')
+            .where((String slug) => slug.isNotEmpty)
             .toList(growable: false),
       );
 }

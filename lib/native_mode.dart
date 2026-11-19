@@ -608,6 +608,7 @@ class WpItem {
     this.attributes = const <WpAttribute>[],
     this.relatedProducts = const <WpItem>[],
     this.categoryNames = const <String>[],
+    this.categorySlugs = const <String>[],
   });
 
   final int id;
@@ -631,6 +632,9 @@ class WpItem {
   final List<WpAttribute> attributes;
   final List<WpItem> relatedProducts;
   final List<String> categoryNames;
+
+  /// تنظیم ۱۹ | اسلاگ دسته‌ها | برای fetch همدسته‌ها وقتی پیلود خالی است.
+  final List<String> categorySlugs;
 
   bool get isProduct => type == 'product';
 
@@ -703,6 +707,14 @@ class WpItem {
                 ((category.cast<String, dynamic>())['name'] as String?) ?? '',
           )
           .where((String name) => name.isNotEmpty)
+          .toList(growable: false),
+      categorySlugs: categories
+          .whereType<Map>()
+          .map(
+            (dynamic category) =>
+                ((category.cast<String, dynamic>())['slug'] as String?) ?? '',
+          )
+          .where((String slug) => slug.isNotEmpty)
           .toList(growable: false),
     );
   }
@@ -3245,104 +3257,11 @@ class NativeDetailScreen extends StatelessWidget {
                       ),
                     ),
 
-                    // محصولات مرتبط
-                    if (item.relatedProducts.isNotEmpty) ...<Widget>[
-                      const SizedBox(height: 20),
-                      const Text(
-                        'خریداران این محصول، این کالاها را هم خریده‌اند',
-                        style: TextStyle(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w800,
-                          color: Dk.text1,
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-                      SizedBox(
-                        height: 235,
-                        child: ListView.builder(
-                          scrollDirection: Axis.horizontal,
-                          padding: const EdgeInsets.symmetric(horizontal: 2),
-                          itemCount: item.relatedProducts.length,
-                          itemBuilder: (BuildContext context, int index) {
-                            final WpItem related = item.relatedProducts[index];
-                            return SizedBox(
-                              width: 150,
-                              child: Card(
-                                margin: const EdgeInsets.all(4),
-                                clipBehavior: Clip.antiAlias,
-                                color: Colors.white,
-                                surfaceTintColor: Colors.transparent,
-                                elevation: 0.6,
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: InkWell(
-                                  onTap: () => Navigator.of(context).push(
-                                    MaterialPageRoute<void>(
-                                      builder: (_) => NativeDetailScreen(
-                                        item: related,
-                                        config: config,
-                                      ),
-                                    ),
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.stretch,
-                                    children: <Widget>[
-                                      if (related.featuredImage.isNotEmpty)
-                                        Image.network(
-                                          related.featuredImage,
-                                          height: 110,
-                                          fit: BoxFit.cover,
-                                          errorBuilder:
-                                              (
-                                                _,
-                                                Object? error,
-                                                StackTrace? trace,
-                                              ) => const SizedBox(height: 110),
-                                        ),
-                                      Padding(
-                                        padding: const EdgeInsets.all(8),
-                                        child: Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: <Widget>[
-                                            Text(
-                                              related.title,
-                                              style: const TextStyle(
-                                                fontSize: 12,
-                                                fontWeight: FontWeight.w700,
-                                                color: Dk.text1,
-                                              ),
-                                              maxLines: 2,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                            if (related.price.isNotEmpty)
-                                              Padding(
-                                                padding: const EdgeInsets.only(
-                                                  top: 4,
-                                                ),
-                                                child: Text(
-                                                  formatToman(related.price),
-                                                  style: const TextStyle(
-                                                    fontSize: 12,
-                                                    fontWeight: FontWeight.w900,
-                                                    color: Dk.text1,
-                                                  ),
-                                                ),
-                                              ),
-                                          ],
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                    ],
+                    // تنظیم ۱۹ | محصولات مرتبط | فقط با تیک ادمین و فقط
+                    // برای محصول | تیک خاموش = هیچ ردیف مرتبطی نمایش داده
+                    // نمیشود | همسلوک با کارت ۱۷ و ۱۸.
+                    if (config.relatedProductsEnabled && item.isProduct)
+                      _RelatedProductsSection(config: config, item: item),
 
                     // دیدگاه‌های کاربران | با خط جداکننده، بالای دکمه سبد
                     const SizedBox(height: 24),
@@ -3516,6 +3435,178 @@ class _ImageViewerScreenState extends State<_ImageViewerScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+/// تنظیم ۱۹ | ردیف افقی محصولات مرتبط | اول پیلود خود محصول
+/// (wc_get_related_products)، وگرنه تا ۸ محصول همدسته زنده گرفته میشود |
+/// خالی یا خطای شبکه = کل بخش بیصدا حذف | بدون هیچ اندپوینت تازه.
+class _RelatedProductsSection extends StatefulWidget {
+  const _RelatedProductsSection({required this.config, required this.item});
+
+  final AppConfig config;
+  final WpItem item;
+
+  @override
+  State<_RelatedProductsSection> createState() =>
+      _RelatedProductsSectionState();
+}
+
+class _RelatedProductsSectionState extends State<_RelatedProductsSection> {
+  static const int _maxItems = 8;
+
+  /// عرض و ارتفاع ثابت | دقیقاً همان نسبت ۰.۶۲ کارت گرید خانه | صفر سرریز.
+  static const double _cardWidth = 165;
+  static const double _cardHeight = 266;
+
+  List<WpItem>? _related;
+  bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _prepare();
+  }
+
+  @override
+  void didUpdateWidget(covariant _RelatedProductsSection oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.item.id != widget.item.id) {
+      _related = null;
+      _loading = false;
+      _prepare();
+    }
+  }
+
+  void _prepare() {
+    final List<WpItem> bundled = widget.item.relatedProducts
+        .where(
+          (WpItem related) =>
+              related.id > 0 && related.id != widget.item.id,
+        )
+        .toList(growable: false);
+    if (bundled.isNotEmpty) {
+      _related = bundled.take(_maxItems).toList(growable: false);
+      return;
+    }
+    if (widget.item.categorySlugs.isNotEmpty) {
+      unawaited(_fetchSameCategory());
+    }
+    // بدون اسلاگ دسته | داده و fallback هر دو خالی | کل بخش پنهان میماند.
+  }
+
+  Future<void> _fetchSameCategory() async {
+    setState(() => _loading = true);
+    try {
+      final ApiPage page = await fetchApiPage(
+        Uri.parse(
+          '${widget.config.effectiveApiBaseUrl}posts?type=product'
+          '&category=${Uri.encodeComponent(widget.item.categorySlugs.first)}'
+          '&per_page=9&page=1',
+        ),
+      );
+      final dynamic decoded = jsonDecode(page.body);
+      final List<WpItem> fetched = (decoded is List ? decoded : const <dynamic>[])
+          .whereType<Map<String, dynamic>>()
+          .map(WpItem.fromMap)
+          .where((WpItem related) => related.id != widget.item.id)
+          .take(_maxItems)
+          .toList(growable: false);
+      if (!mounted) return;
+      setState(() {
+        _related = fetched;
+        _loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      // خطای شبکه | کل بخش بیصدا پنهان | بدون پیام خطا.
+      setState(() {
+        _related = const <WpItem>[];
+        _loading = false;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          const SizedBox(height: 20),
+          const Text(
+            'محصولات مرتبط',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+              color: Dk.text1,
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            height: _cardHeight,
+            child: ListView.separated(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 2),
+              itemCount: 3,
+              separatorBuilder: (BuildContext context, int index) =>
+                  const SizedBox(width: 4),
+              itemBuilder: (BuildContext context, int index) => SizedBox(
+                width: _cardWidth,
+                child: const SkeletonBox(height: _cardHeight, radius: 8),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+    final List<WpItem> related = _related ?? const <WpItem>[];
+    if (related.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        const SizedBox(height: 20),
+        const Text(
+          'محصولات مرتبط',
+          style: TextStyle(
+            fontSize: 14,
+            fontWeight: FontWeight.w800,
+            color: Dk.text1,
+          ),
+        ),
+        const SizedBox(height: 10),
+        SizedBox(
+          height: _cardHeight,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 2),
+            itemCount: related.length,
+            separatorBuilder: (BuildContext context, int index) =>
+                const SizedBox(width: 4),
+            itemBuilder: (BuildContext context, int index) {
+              final WpItem relatedItem = related[index];
+              return SizedBox(
+                width: _cardWidth,
+                child: ProductGridCard(
+                  item: relatedItem,
+                  primaryColor: widget.config.primaryColor,
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => NativeDetailScreen(
+                        item: relatedItem,
+                        config: widget.config,
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 }

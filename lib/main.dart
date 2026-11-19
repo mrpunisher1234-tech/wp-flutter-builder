@@ -96,6 +96,8 @@ class AppConfig {
     this.pendingOrderPayEnabled = false,
     // تنظیم ۱۸ | علاقه‌مندی‌های محلی.
     this.favoritesEnabled = false,
+    // تنظیم ۱۹ | محصولات مرتبط.
+    this.relatedProductsEnabled = false,
     this.announcement = const AppAnnouncement(),
   });
 
@@ -151,6 +153,8 @@ class AppConfig {
   final bool pendingOrderPayEnabled;
   // تنظیم ۱۸ | علاقه‌مندی‌ها | قلب روی محصولات | ذخیره روی دستگاه کاربر.
   final bool favoritesEnabled;
+  // تنظیم ۱۹ | محصولات مرتبط | ردیف افقی در صفحهٔ جزئیات.
+  final bool relatedProductsEnabled;
   final AppAnnouncement announcement;
 
   /// لوگوی نهایی اسپلش | اولویت حلشده سمت وردپرس، وگرنه:
@@ -514,6 +518,7 @@ class AppConfig {
       bazaarRsaPublicKey: bazaarRsaPublicKey,
       pendingOrderPayEnabled: pendingOrderPayEnabled,
       favoritesEnabled: favoritesEnabled,
+      relatedProductsEnabled: relatedProductsEnabled,
       // این دو مقدار در زمان بیلد تثبیت شدهاند و هرگز از راه دور بازنویسی نمیشوند.
       splashLogoBundledUrl: pickText(
         'logo_bundled_url',
@@ -630,6 +635,10 @@ class AppConfig {
       favoritesEnabled: decoded.containsKey('favorites_enabled')
           ? decoded['favorites_enabled'] == true
           : favoritesEnabled,
+      // تنظیم ۱۹ | محصولات مرتبط | کلید در سطح ریشهٔ /config.
+      relatedProductsEnabled: decoded.containsKey('related_products_enabled')
+          ? decoded['related_products_enabled'] == true
+          : relatedProductsEnabled,
       bazaarUseLocalSignatureCheck:
           paymentBlock['use_local_signature_check'] == null
           ? bazaarUseLocalSignatureCheck
