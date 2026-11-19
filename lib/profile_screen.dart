@@ -8,6 +8,7 @@ import 'main.dart';
 import 'native_mode.dart';
 import 'skeleton.dart';
 import 'orders_screen.dart';
+import 'favorites_screen.dart';
 import 'about_screen.dart';
 import 'addresses_screen.dart';
 import 'support_screen.dart';
@@ -434,6 +435,22 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
               ],
               const SizedBox(height: 24),
+              // مهمان هم به علاقه‌مندی‌ها دسترسی دارد | ذخیره روی خود دستگاه است.
+              if (widget.config.favoritesEnabled)
+                ListenableBuilder(
+                  listenable: FavoritesManager.instance,
+                  builder: (BuildContext context, Widget? _) =>
+                      _buildProfileTile(
+                    Icons.favorite_border_rounded,
+                    'علاقه‌مندی‌ها',
+                    () => Navigator.of(context).push(
+                      MaterialPageRoute<void>(
+                        builder: (_) => FavoritesScreen(config: widget.config),
+                      ),
+                    ),
+                    badgeCount: FavoritesManager.instance.count,
+                  ),
+                ),
               // مهمان هم به پشتیبانی و درباره دسترسی دارد | لاگین لازم نیست.
               _buildProfileTile(
                 Icons.support_agent_outlined,
@@ -516,6 +533,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ),
           ),
         ),
+        // تنظیم ۱۸ | علاقه‌مندی‌ها | با شمارندهٔ زنده | کاملاً محلی.
+        if (widget.config.favoritesEnabled)
+          ListenableBuilder(
+            listenable: FavoritesManager.instance,
+            builder: (BuildContext context, Widget? _) => _buildProfileTile(
+              Icons.favorite_border_rounded,
+              'علاقه‌مندی‌ها',
+              () => Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (_) => FavoritesScreen(config: widget.config),
+                ),
+              ),
+              badgeCount: FavoritesManager.instance.count,
+            ),
+          ),
         _buildProfileTile(
           Icons.location_on_outlined,
           'آدرس‌های من',
@@ -562,7 +594,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  Widget _buildProfileTile(IconData icon, String title, VoidCallback onTap) {
+  Widget _buildProfileTile(
+    IconData icon,
+    String title,
+    VoidCallback onTap, {
+    int? badgeCount,
+  }) {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       decoration: BoxDecoration(
@@ -571,7 +608,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
         border: Border.all(color: Dk.border),
       ),
       child: ListTile(
-        leading: Icon(icon, color: Dk.text2, size: 22),
+        leading: badgeCount == null
+            ? Icon(icon, color: Dk.text2, size: 22)
+            : Badge(
+                isLabelVisible: badgeCount > 0,
+                label: Text(
+                  toPersianDigits('$badgeCount'),
+                  style: const TextStyle(color: Colors.white, fontSize: 9),
+                ),
+                backgroundColor: Dk.discount,
+                child: Icon(icon, color: Dk.text2, size: 22),
+              ),
         title: Text(
           title,
           style: const TextStyle(

@@ -10,6 +10,7 @@ import 'cart_screen.dart';
 import 'categories_screen.dart';
 import 'api_page.dart';
 import 'announcement.dart';
+import 'favorites_screen.dart';
 import 'main.dart';
 import 'product_reviews.dart';
 import 'profile_screen.dart';
@@ -2170,7 +2171,11 @@ class ProductGridCard extends StatelessWidget {
     final bool hasSale = item.onSale && item.salePrice.isNotEmpty;
 
     return InkWell(
-      onTap: onTap,
+      onTap: () {
+        // تنظیم ۱۸ | اسنپ‌شات ذخیره‌شده با دادهٔ تازهٔ همین لمس بهروز میشود.
+        FavoritesManager.instance.refreshSnapshot(item);
+        onTap();
+      },
       borderRadius: BorderRadius.circular(8),
       child: Container(
         decoration: BoxDecoration(
@@ -2244,6 +2249,44 @@ class ProductGridCard extends StatelessWidget {
                         ),
                       ),
                     ),
+                  // تنظیم ۱۸ | قلب علاقه‌مندی | گوشهٔ مقابل برچسب تخفیف |
+                  // گیت واکنشگرا داخل ListenableBuilder | خاموش = هیچ فضایی
+                  // نمیگیرد | روشن شدن از /config بدون ریبیلد اپ ظاهر میشود.
+                  PositionedDirectional(
+                    top: 4,
+                    end: 4,
+                    child: ListenableBuilder(
+                      listenable: FavoritesManager.instance,
+                      builder: (BuildContext context, Widget? _) {
+                        if (!FavoritesManager.instance.uiEnabled) {
+                          return const SizedBox.shrink();
+                        }
+                        final bool saved =
+                            FavoritesManager.instance.isFavorite(item.id);
+                        return InkWell(
+                          onTap: () =>
+                              FavoritesManager.instance.toggle(item),
+                          borderRadius: BorderRadius.circular(999),
+                          child: Container(
+                            width: 32,
+                            height: 32,
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.92),
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Dk.border),
+                            ),
+                            child: Icon(
+                              saved
+                                  ? Icons.favorite_rounded
+                                  : Icons.favorite_border_rounded,
+                              size: 18,
+                              color: saved ? Dk.discount : Dk.text3,
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -2863,6 +2906,26 @@ class NativeDetailScreen extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
           ),
           actions: <Widget>[
+            // تنظیم ۱۸ | قلب علاقه‌مندی | زنده و کنار آیکون سبد.
+            if (config.favoritesEnabled)
+              ListenableBuilder(
+                listenable: FavoritesManager.instance,
+                builder: (BuildContext context, Widget? _) {
+                  final bool saved =
+                      FavoritesManager.instance.isFavorite(item.id);
+                  return IconButton(
+                    tooltip: 'علاقه‌مندی',
+                    onPressed: () =>
+                        FavoritesManager.instance.toggle(item),
+                    icon: Icon(
+                      saved
+                          ? Icons.favorite_rounded
+                          : Icons.favorite_border_rounded,
+                      color: saved ? Dk.discount : Dk.text1,
+                    ),
+                  );
+                },
+              ),
             ListenableBuilder(
               listenable: CartManager.instance,
               builder: (BuildContext context, Widget? child) {
