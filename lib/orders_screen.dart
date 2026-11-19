@@ -985,29 +985,42 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
       children: <Widget>[
         _SectionCard(
           title: 'وضعیت سفارش',
-          child: Row(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Expanded(
-                child: Text(
-                  detail.summary.dateLabel,
-                  style: const TextStyle(fontSize: 12.5, color: Dk.text2),
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                decoration: BoxDecoration(
-                  color: OrderStatusStyle.of(detail.summary.status).background,
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  detail.summary.statusLabel,
-                  style: TextStyle(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w700,
-                    color: OrderStatusStyle.of(detail.summary.status).foreground,
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: Text(
+                      detail.summary.dateLabel,
+                      style: const TextStyle(fontSize: 12.5, color: Dk.text2),
+                    ),
                   ),
-                ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: OrderStatusStyle.of(detail.summary.status).background,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      detail.summary.statusLabel,
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                        color: OrderStatusStyle.of(detail.summary.status).foreground,
+                      ),
+                    ),
+                  ),
+                ],
               ),
+              // تنظیم ۲۰ | تایم‌لاین گام‌به‌گام | فقط با تیک ادمین.
+              if (widget.config.orderTimelineEnabled) ...<Widget>[
+                const SizedBox(height: 14),
+                _OrderTimeline(
+                  status: detail.summary.status,
+                  primaryColor: widget.config.primaryColor,
+                ),
+              ],
             ],
           ),
         ),
@@ -1162,6 +1175,200 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
           ),
         const SizedBox(height: 8),
       ],
+    );
+  }
+}
+
+/// تنظیم ۲۰ | تایم‌لاین وضعیت سفارش | وضعیت ووکامرس به مراحل فارسی مپ میشود |
+/// وضعیت پایانی = نوار توقف به‌جای مسیر پیشروی | وضعیت ناشناخته/سفارشی =
+/// هیچ تایم‌لاینی (فقط چیپ) | کاملاً نمایشی و بدون هیچ تغییر سرور.
+enum _StepState { done, current, upcoming }
+
+class _OrderTimeline extends StatelessWidget {
+  const _OrderTimeline({required this.status, required this.primaryColor});
+
+  final String status;
+  final Color primaryColor;
+
+  static const List<String> _defaultTitles = <String>[
+    'ثبت سفارش',
+    'پرداخت و تأیید',
+    'آماده‌سازی و ارسال',
+    'تحویل شد',
+  ];
+
+  /// گامهای پیشروی | done = تعداد گامهای تکمیلشده | current = اندیس گامِ همین
+  /// حالا (۴ = همه تمام) | null یعنی وضعیت پایانی یا ناشناخته.
+  ({List<String> titles, int done, int current})? get _progress {
+    switch (status) {
+      case 'pending':
+        return (titles: _defaultTitles, done: 1, current: 1);
+      case 'on-hold':
+        return (
+          titles: <String>[
+            'ثبت سفارش',
+            'بررسی و تأیید',
+            'آماده‌سازی و ارسال',
+            'تحویل شد',
+          ],
+          done: 1,
+          current: 1,
+        );
+      case 'processing':
+        return (titles: _defaultTitles, done: 2, current: 2);
+      case 'completed':
+        return (titles: _defaultTitles, done: 4, current: -1);
+      default:
+        return null;
+    }
+  }
+
+  /// وضعیتهای پایانی | نوار توقف با پیام روشن فارسی.
+  ({IconData icon, String message})? get _stopped {
+    switch (status) {
+      case 'cancelled':
+        return (icon: Icons.cancel_outlined, message: 'این سفارش لغو شده است');
+      case 'refunded':
+        return (
+          icon: Icons.assignment_return_outlined,
+          message: 'مبلغ این سفارش مسترد شده است',
+        );
+      case 'failed':
+        return (icon: Icons.error_outline, message: 'پرداخت این سفارش ناموفق بود');
+      default:
+        return null;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ({IconData icon, String message})? stopped = _stopped;
+    if (stopped != null) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFDECEF),
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          children: <Widget>[
+            Icon(stopped.icon, size: 18, color: Dk.discount),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                stopped.message,
+                style: const TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w700,
+                  color: Dk.discount,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final ({List<String> titles, int done, int current})? progress = _progress;
+    if (progress == null) {
+      // وضعیت سفارشی/ناشناخته | فقط چیپ بالا | بدون تایم‌لاین گمراه‌کننده.
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      children: <Widget>[
+        for (int i = 0; i < progress.titles.length; i++)
+          _buildStep(
+            index: i,
+            title: progress.titles[i],
+            state: i < progress.done
+                ? _StepState.done
+                : (i == progress.current
+                    ? _StepState.current
+                    : _StepState.upcoming),
+            isLast: i == progress.titles.length - 1,
+          ),
+      ],
+    );
+  }
+
+  Widget _buildStep({
+    required int index,
+    required String title,
+    required _StepState state,
+    required bool isLast,
+  }) {
+    final Color lineColor = state == _StepState.done ? Dk.success : Dk.border;
+    final Color borderColor = state == _StepState.upcoming
+        ? Dk.border
+        : (state == _StepState.done ? Dk.success : primaryColor);
+    return IntrinsicHeight(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          SizedBox(
+            width: 30,
+            child: Column(
+              children: <Widget>[
+                Container(
+                  width: 24,
+                  height: 24,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: state == _StepState.upcoming
+                        ? Colors.white
+                        : (state == _StepState.done ? Dk.success : primaryColor),
+                    border: Border.all(color: borderColor, width: 1.6),
+                  ),
+                  child: state == _StepState.done
+                      ? const Icon(
+                          Icons.check_rounded,
+                          size: 15,
+                          color: Colors.white,
+                        )
+                      : state == _StepState.current
+                          ? Center(
+                              child: Container(
+                                width: 8,
+                                height: 8,
+                                decoration: const BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            )
+                          : null,
+                ),
+                if (!isLast)
+                  Expanded(
+                    child: Container(width: 2, color: lineColor),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Padding(
+              padding: EdgeInsets.only(top: 3, bottom: isLast ? 0 : 20),
+              child: Text(
+                title,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: state == _StepState.current
+                      ? FontWeight.w800
+                      : FontWeight.w700,
+                  color: state == _StepState.done
+                      ? Dk.text1
+                      : (state == _StepState.current
+                          ? primaryColor
+                          : Dk.text3),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
