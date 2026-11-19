@@ -3,10 +3,18 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import 'main.dart';
 import 'native_mode.dart';
 import 'skeleton.dart';
+
+/// پیام خطای فارسی سرور | برای اسنک‌بار صفحهٔ سفارش‌ها.
+class _OrderApiException implements Exception {
+  const _OrderApiException(this.message);
+
+  final String message;
+}
 
 /// سفارش‌های من | فهرست و جزئیات سفارش‌های همان شمارهٔ موبایلی که کاربر با آن
 /// وارد شده است. هویت از توکن ورود می‌آید (کلید prefs: wptf_auth_token) و سرور
@@ -23,6 +31,7 @@ class OrderSummary {
     required this.total,
     required this.itemsCount,
     required this.thumbnails,
+    this.orderKey = '',
   });
 
   final int id;
@@ -33,6 +42,10 @@ class OrderSummary {
   final String total;
   final int itemsCount;
   final List<String> thumbnails;
+
+  /// کارت ۱۷ | کلید سفارش | برای استعلام وضعیت و پرداخت دوباره | خالی یعنی
+  /// سرور قدیمی است و استعلام اول حذف میشود (سرور خودش دوباره چک میکند).
+  final String orderKey;
 
   static String _text(dynamic value) => ((value as String?) ?? '').trim();
 
@@ -55,6 +68,7 @@ class OrderSummary {
       total: _money(map['total']),
       itemsCount: (map['items_count'] as num?)?.toInt() ?? 0,
       thumbnails: _urls(map['thumbnails']),
+      orderKey: _text(map['order_key']),
     );
   }
 }
@@ -219,9 +233,12 @@ class OrdersScreen extends StatefulWidget {
   State<OrdersScreen> createState() => _OrdersScreenState();
 }
 
-class _OrdersScreenState extends State<OrdersScreen> {
+class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver {
   final ScrollController _scrollController = ScrollController();
   final List<OrderSummary> _orders = <OrderSummary>[];
+
+  // کارت ۱۷ | سفارشی که همین الان در جریان پرداخت دوباره است.
+  int? _payingOrderId;
 
   // تنظیم ۱۴ | تعداد سفارشات در هر صفحه از کانفیگ ادمین میآید (۵ تا ۵۰).
   int get _pageSize => widget.config.ordersPerPage.clamp(5, 50);
@@ -236,14 +253,28 @@ class _OrdersScreenState extends State<OrdersScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _scrollController.addListener(_autoFillViewport);
     _fetchOrders();
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _scrollController.dispose();
     super.dispose();
+  }
+
+  /// کارت ۱۷ | بازگشت از مرورگر بانک | فهرست بی‌صدا تازه میشود تا وضعیت
+  /// سفارش بهروز شود | موفقیت کامل خودش صفحهٔ نتیجه را باز میکند.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed &&
+        widget.config.pendingOrderPayEnabled &&
+        !_isLoading &&
+        !_needsLogin) {
+      _fetchOrders(silent: true);
+    }
   }
 
   /// نزدیک شدن به انتهای لیست، صفحهٔ بعدی را می‌آورد و اگر صفحه کوتاه بود
@@ -267,11 +298,11 @@ class _OrdersScreenState extends State<OrdersScreen> {
     }
   }
 
-  Future<void> _fetchOrders({bool loadMore = false}) async {
+  Future<void> _fetchOrders({bool loadMore = false, bool silent = false}) async {
     if (loadMore) {
       if (_isLoadingMore || !_hasMore || _isLoading) return;
       setState(() => _isLoadingMore = true);
-    } else {
+    } else if (!silent) {
       setState(() {
         _isLoading = true;
         _error = null;
@@ -355,6 +386,11 @@ class _OrdersScreenState extends State<OrdersScreen> {
       }
     } catch (_) {
       if (!mounted) return;
+      if (silent) {
+        // تازه‌سازی بی‌صدا | خطا لیست فعلی را نمی‌ریزد و صفحه‌بندی نمی‌شکند.
+        _isLoadingMore = false;
+        return;
+      }
       setState(() {
         _isLoading = false;
         _isLoadingMore = false;
@@ -376,6 +412,135 @@ class _OrdersScreenState extends State<OrdersScreen> {
         builder: (_) => OrderDetailScreen(config: widget.config, order: order),
       ),
     );
+  }
+
+  /// کارت ۱۷ | آیا روی این سفارش دکمهٔ پرداخت دوباره نمایش داده شود؟
+  bool _canPayAgain(OrderSummary order) =>
+      widget.config.pendingOrderPayEnabled && order.status == 'pending';
+
+  /// پیام‌های صفحه سفارش‌ها | اسنک‌بار سیاه/سفید.
+  void _notice(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          message,
+          style: const TextStyle(color: Colors.white, fontSize: 13),
+        ),
+        backgroundColor: Colors.black,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  /// POST JSON به REST افزونه | پیام فارسی سرور بیرون پرتاب میشود.
+  Future<Map<String, dynamic>> _postJson(
+    HttpClient client,
+    String path,
+    Map<String, dynamic> payload,
+  ) async {
+    final HttpClientRequest request = await client
+        .postUrl(Uri.parse('${widget.config.effectiveApiBaseUrl}$path'))
+        .timeout(const Duration(seconds: 15));
+    request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
+    request.write(jsonEncode(payload));
+    final HttpClientResponse response = await request.close().timeout(
+      const Duration(seconds: 15),
+    );
+    final String raw = await response
+        .transform(utf8.decoder)
+        .join()
+        .timeout(const Duration(seconds: 15));
+    final dynamic decoded = jsonDecode(raw);
+    if (response.statusCode != 200 || decoded is! Map<String, dynamic>) {
+      throw _OrderApiException(
+        decoded is Map<String, dynamic> && decoded['message'] is String
+            ? decoded['message'] as String
+            : 'خطا در ارتباط با سایت',
+      );
+    }
+    return decoded;
+  }
+
+  /// کارت ۱۷ | پرداخت دوبارهٔ سفارش معلق | اول استعلام وضعیت، بعد درگاه |
+  /// بازگشت موفق با دیپ‌لینک خودش صفحهٔ نتیجه را باز میکند.
+  Future<void> _payAgain(OrderSummary order) async {
+    if (_payingOrderId != null || order.status != 'pending') return;
+    setState(() => _payingOrderId = order.id);
+    HttpClient? client;
+    try {
+      final String? token = await _authToken();
+      if (token == null) {
+        _notice('برای پرداخت دوباره ابتدا وارد حساب شوید');
+        return;
+      }
+      client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
+
+      // ۱) استعلام وضعیت | سفارش پرداختشده هرگز دوباره به درگاه نمیرود.
+      if (order.orderKey.isNotEmpty) {
+        final Map<String, dynamic> status = await _postJson(
+          client,
+          'payment/order-status',
+          <String, dynamic>{'order_id': order.id, 'order_key': order.orderKey},
+        );
+        if (status['paid'] == true) {
+          await _fetchOrders(silent: true);
+          _notice('این سفارش قبلاً پرداخت شده است | فهرست به‌روزرسانی شد');
+          return;
+        }
+      }
+
+      // ۲) لینک پرداخت دوباره | سرور مالکیت و needs_payment را دوباره چک میکند.
+      final Map<String, dynamic> payment = await _postJson(
+        client,
+        'payment/retry',
+        <String, dynamic>{'auth_token': token, 'order_id': order.id},
+      );
+      if (payment['already_paid'] == true) {
+        await _fetchOrders(silent: true);
+        _notice('این سفارش قبلاً پرداخت شده است | فهرست به‌روزرسانی شد');
+        return;
+      }
+      final String paymentUrl = AppConfig.mapEmulatorUrl(
+        ((payment['payment_url'] as String?) ?? '').trim(),
+      );
+      if (paymentUrl.isEmpty) {
+        throw const HttpException('empty payment url');
+      }
+
+      // ۳) صفحه امن بانک | همان الگوی تسویه‌حساب | Custom Tab وگرنه مرورگر بیرونی.
+      final Uri gatewayUri = Uri.parse(paymentUrl);
+      bool opened = false;
+      try {
+        opened = await launchUrl(gatewayUri, mode: LaunchMode.inAppBrowserView);
+      } catch (_) {
+        opened = false;
+      }
+      if (!opened) {
+        try {
+          opened = await launchUrl(
+            gatewayUri,
+            mode: LaunchMode.externalApplication,
+          );
+        } catch (_) {
+          opened = false;
+        }
+      }
+      _notice(
+        opened
+            ? 'صفحه پرداخت باز شد | پس از پرداخت به اپ برمی‌گردید'
+            : 'صفحه پرداخت باز نشد | دوباره تلاش کنید',
+      );
+    } on _OrderApiException catch (error) {
+      _notice(error.message);
+    } catch (_) {
+      _notice('خطا در ارتباط با سایت');
+    } finally {
+      client?.close(force: true);
+      if (mounted) {
+        setState(() => _payingOrderId = null);
+      }
+    }
   }
 
   @override
@@ -467,6 +632,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
           order: order,
           primaryColor: widget.config.primaryColor,
           onTap: () => _openDetail(order),
+          onPayAgain: _canPayAgain(order) ? () => _payAgain(order) : null,
+          payBusy: _payingOrderId == order.id,
+          payLocked: _payingOrderId != null && _payingOrderId != order.id,
         );
       },
     );
@@ -479,11 +647,21 @@ class _OrderCard extends StatelessWidget {
     required this.order,
     required this.primaryColor,
     required this.onTap,
+    this.onPayAgain,
+    this.payBusy = false,
+    this.payLocked = false,
   });
 
   final OrderSummary order;
   final Color primaryColor;
   final VoidCallback onTap;
+
+  /// کارت ۱۷ | فقط برای سفارش pending و وقتی تنظیم ادمین روشن باشد مقدار دارد.
+  final VoidCallback? onPayAgain;
+
+  /// اسپینر فقط روی سفارشِ در جریان پرداخت | بقیه فقط قفل میشوند.
+  final bool payBusy;
+  final bool payLocked;
 
   @override
   Widget build(BuildContext context) {
@@ -569,6 +747,39 @@ class _OrderCard extends StatelessWidget {
                   ),
                 ],
               ),
+              if (onPayAgain != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 10),
+                  child: SizedBox(
+                    width: double.infinity,
+                    height: 38,
+                    child: FilledButton(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: primaryColor,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        textStyle: const TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      onPressed: (payBusy || payLocked) ? null : onPayAgain,
+                      child: payBusy
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Text('پرداخت دوباره'),
+                    ),
+                  ),
+                ),
             ],
           ),
         ),

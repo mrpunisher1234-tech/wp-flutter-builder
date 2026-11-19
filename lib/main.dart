@@ -91,6 +91,8 @@ class AppConfig {
     this.paymentSandbox = false,
     this.bazaarUseLocalSignatureCheck = false,
     this.bazaarRsaPublicKey = '',
+    // تنظیم ۱۷ | پرداخت دوبارهٔ سفارش معلق.
+    this.pendingOrderPayEnabled = false,
     this.announcement = const AppAnnouncement(),
   });
 
@@ -142,6 +144,8 @@ class AppConfig {
   final bool paymentSandbox;
   final bool bazaarUseLocalSignatureCheck;
   final String bazaarRsaPublicKey;
+  // تنظیم ۱۷ | پرداخت دوبارهٔ سفارش معلق | دکمه در صفحه سفارش‌های من.
+  final bool pendingOrderPayEnabled;
   final AppAnnouncement announcement;
 
   /// لوگوی نهایی اسپلش | اولویت حلشده سمت وردپرس، وگرنه:
@@ -503,6 +507,7 @@ class AppConfig {
       paymentSandbox: paymentSandbox,
       bazaarUseLocalSignatureCheck: bazaarUseLocalSignatureCheck,
       bazaarRsaPublicKey: bazaarRsaPublicKey,
+      pendingOrderPayEnabled: pendingOrderPayEnabled,
       // این دو مقدار در زمان بیلد تثبیت شدهاند و هرگز از راه دور بازنویسی نمیشوند.
       splashLogoBundledUrl: pickText(
         'logo_bundled_url',
@@ -611,6 +616,10 @@ class AppConfig {
       paymentSandbox: paymentBlock['sandbox'] == null
           ? paymentSandbox
           : paymentBlock['sandbox'] == true,
+      // تنظیم ۱۷ | پرداخت دوبارهٔ سفارش معلق | غیبت کلید یعنی قدیم حفظ شود.
+      pendingOrderPayEnabled: paymentBlock['pending_order_pay_enabled'] == null
+          ? pendingOrderPayEnabled
+          : paymentBlock['pending_order_pay_enabled'] == true,
       bazaarUseLocalSignatureCheck:
           paymentBlock['use_local_signature_check'] == null
           ? bazaarUseLocalSignatureCheck
