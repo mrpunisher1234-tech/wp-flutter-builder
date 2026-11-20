@@ -2528,6 +2528,10 @@ class _NativeSearchScreenState extends State<NativeSearchScreen> {
   bool _searching = false;
   String? _error;
 
+  // تنظیم ۲۳ | وضعیت مرتب‌سازی/فیلتر | با تغییر، جستجو از صفحهٔ ۱ ریست میشود.
+  String _sort = 'newest';
+  bool _inStockOnly = false;
+
   static const int _searchPageSize = 10;
 
   @override
@@ -2661,6 +2665,13 @@ class _NativeSearchScreenState extends State<NativeSearchScreen> {
               'per_page': '$_searchPageSize',
               'search': query,
               'page': '$page',
+              // تنظیم ۲۳ | با تیک مرتب‌سازی، نتایج جستجو فقط محصول برمیگردند
+              // تا sort/in_stock سمت سرور معنا پیدا کنند | تیک خاموش = مثل قبل.
+              if (widget.config.sortFilterEnabled) 'type': 'product',
+              if (widget.config.sortFilterEnabled && _sort != 'newest')
+                'sort': _sort,
+              if (widget.config.sortFilterEnabled && _inStockOnly)
+                'in_stock': '1',
             },
           );
       final ApiPage response = await fetchApiPage(uri);
@@ -2759,6 +2770,33 @@ class _NativeSearchScreenState extends State<NativeSearchScreen> {
   }
 
   Widget _buildBody() {
+    // تنظیم ۲۳ | نوار مرتبسازی بالای همهٔ حالتها ثابت است (لودینگ/خطا/خالی/
+    // گرید) تا کاربر با نتیجهٔ خالیِ فیلتر قفل نشود | بدون جستجوی فعال =
+    // محتوای عادی (تاریخچه/پیشنهادها) بدون نوار.
+    final Widget content = _buildResultsContent();
+    if (!widget.config.sortFilterEnabled || _activeQuery.isEmpty) {
+      return content;
+    }
+    return Column(
+      children: <Widget>[
+        SortFilterBar(
+          sort: _sort,
+          inStockOnly: _inStockOnly,
+          primaryColor: widget.config.primaryColor,
+          onChanged: (String sort, bool inStockOnly) {
+            setState(() {
+              _sort = sort;
+              _inStockOnly = inStockOnly;
+            });
+            _runSearch(_activeQuery);
+          },
+        ),
+        Expanded(child: content),
+      ],
+    );
+  }
+
+  Widget _buildResultsContent() {
     if (_searching) {
       return const SkeletonProductGrid();
     }
@@ -3907,6 +3945,121 @@ class _SearchHistoryChip extends StatelessWidget {
               child: const Padding(
                 padding: EdgeInsets.all(4),
                 child: Icon(Icons.close_rounded, size: 14, color: Dk.text3),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// تنظیم ۲۳ | نوار مرتب‌سازی و فیلتر موجودی | چیپ‌های RTL افقی | عمومی
+/// چون هم جستجو و هم صفحهٔ محصولات دسته از آن استفاده میکنند | تغییر هر
+/// چیپ با onChanged به صفحه برمیگردد تا صفحه‌بندی ریست و سرور صدا زده شود.
+class SortFilterBar extends StatelessWidget {
+  const SortFilterBar({
+    super.key,
+    required this.sort,
+    required this.inStockOnly,
+    required this.primaryColor,
+    required this.onChanged,
+  });
+
+  /// newest | price_asc | price_desc | bestselling
+  final String sort;
+  final bool inStockOnly;
+  final Color primaryColor;
+  final void Function(String sort, bool inStockOnly) onChanged;
+
+  static const List<(String, String)> _options = <(String, String)>[
+    ('newest', 'جدیدترین'),
+    ('price_asc', 'ارزان‌ترین'),
+    ('price_desc', 'گران‌ترین'),
+    ('bestselling', 'پرفروش‌ترین'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      color: Colors.white,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: <Widget>[
+            for (final (String value, String label) in _options)
+              Padding(
+                padding: const EdgeInsets.only(left: 6),
+                child: InkWell(
+                  onTap: () {
+                    // چیپِ مرتبسازیِ فعال دوباره کلیک = درخواست اضافه نمیخواهیم.
+                    if (sort == value) return;
+                    onChanged(value, inStockOnly);
+                  },
+                  borderRadius: BorderRadius.circular(999),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 7,
+                    ),
+                    decoration: BoxDecoration(
+                      color: sort == value ? primaryColor : Colors.white,
+                      borderRadius: BorderRadius.circular(999),
+                      border: Border.all(
+                        color: sort == value ? primaryColor : Dk.border,
+                      ),
+                    ),
+                    child: Text(
+                      label,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: sort == value ? Colors.white : Dk.text2,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            const SizedBox(width: 2),
+            InkWell(
+              onTap: () => onChanged(sort, !inStockOnly),
+              borderRadius: BorderRadius.circular(999),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 7,
+                ),
+                decoration: BoxDecoration(
+                  color: inStockOnly
+                      ? const Color(0xFFEAF7EC)
+                      : Colors.white,
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: inStockOnly ? Dk.success : Dk.border,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Icon(
+                      inStockOnly
+                          ? Icons.check_circle_rounded
+                          : Icons.circle_outlined,
+                      size: 14,
+                      color: inStockOnly ? Dk.success : Dk.text4,
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      'فقط کالاهای موجود',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: inStockOnly ? Dk.success : Dk.text2,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],

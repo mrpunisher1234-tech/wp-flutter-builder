@@ -454,6 +454,14 @@ class _CategoryProductsScreenState extends State<CategoryProductsScreen> {
   bool _hasMore = false;
   String? _error;
 
+  // تنظیم ۲۳ | وضعیت مرتب‌سازی/فیلتر | با تغییر، فهرست از صفحهٔ ۱ ریست میشود.
+  String _sort = 'newest';
+  bool _inStockOnly = false;
+
+  // گارد ریس | اگر کاربر سریع بین چیپ‌ها جابه‌جا شود، جواب چرخهٔ کهنه دور
+  // ریخته میشود و هرگز لیست چرخهٔ جدید را خراب نمیکند.
+  int _fetchSeq = 0;
+
   @override
   void initState() {
     super.initState();
@@ -476,16 +484,18 @@ class _CategoryProductsScreenState extends State<CategoryProductsScreen> {
   }
 
   Future<void> _fetchProducts() async {
+    final int seq = ++_fetchSeq;
     setState(() {
       _loading = true;
       _error = null;
       _items = <WpItem>[];
       _page = 1;
       _hasMore = false;
+      _loadingMore = false;
     });
 
-    final List<WpItem>? fetched = await _fetchPage(1);
-    if (!mounted) return;
+    final List<WpItem>? fetched = await _fetchPage(1, seq);
+    if (!mounted || seq != _fetchSeq) return; // جواب چرخهٔ کهنه دور ریخته میشود
     if (fetched == null) return; // خطا نمایش داده شد
     setState(() {
       _items = fetched;
@@ -496,10 +506,11 @@ class _CategoryProductsScreenState extends State<CategoryProductsScreen> {
 
   Future<void> _loadMore() async {
     if (_loadingMore || !_hasMore || _loading) return;
+    final int seq = _fetchSeq;
     setState(() => _loadingMore = true);
 
-    final List<WpItem>? fetched = await _fetchPage(_page + 1);
-    if (!mounted) return;
+    final List<WpItem>? fetched = await _fetchPage(_page + 1, seq);
+    if (!mounted || seq != _fetchSeq) return; // چرخه عوض شده | بیصدا کنار
     if (fetched == null) {
       setState(() {
         _loadingMore = false;
@@ -516,7 +527,7 @@ class _CategoryProductsScreenState extends State<CategoryProductsScreen> {
   }
 
   /// یک صفحه محصول با slug واقعی دسته (نه نام!) | taxonomy=product_cat
-  Future<List<WpItem>?> _fetchPage(int page) async {
+  Future<List<WpItem>?> _fetchPage(int page, int seq) async {
     try {
       final Uri uri = Uri.parse(
         '${widget.config.effectiveApiBaseUrl}posts',
@@ -526,11 +537,16 @@ class _CategoryProductsScreenState extends State<CategoryProductsScreen> {
           'type': 'product',
           'category': widget.category.slug,
           'page': '$page',
+          // تنظیم ۲۳ | مرتب‌سازی/فیلتر فقط وقتی تیک ادمین روشن باشد.
+          if (widget.config.sortFilterEnabled && _sort != 'newest')
+            'sort': _sort,
+          if (widget.config.sortFilterEnabled && _inStockOnly)
+            'in_stock': '1',
         },
       );
       final ApiPage response = await fetchApiPage(uri);
 
-      if (!mounted) return null;
+      if (!mounted || seq != _fetchSeq) return null;
 
       if (response.statusCode != 200) {
         setState(() {
@@ -542,13 +558,15 @@ class _CategoryProductsScreenState extends State<CategoryProductsScreen> {
       final String body = response.body;
       final List<dynamic> list = jsonDecode(body) as List<dynamic>;
       if (!mounted) return null;
-      _hasMore = response.hasNextPage(page);
+      if (seq == _fetchSeq) {
+        _hasMore = response.hasNextPage(page);
+      }
       return list
           .whereType<Map<String, dynamic>>()
           .map(WpItem.fromMap)
           .toList();
     } catch (_) {
-      if (!mounted) return null;
+      if (!mounted || seq != _fetchSeq) return null;
       setState(() {
         _error = 'خطا در اتصال به اینترنت';
         _loading = false;
@@ -576,84 +594,104 @@ class _CategoryProductsScreenState extends State<CategoryProductsScreen> {
           backgroundColor: Colors.white,
           foregroundColor: Dk.text1,
         ),
-        body: _loading
-            ? const Padding(
-                padding: EdgeInsets.all(10),
-                child: SkeletonProductGrid(),
-              )
-            : _error != null
-                ? Center(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        Text(_error!,
-                            style: const TextStyle(color: Colors.red)),
-                        const SizedBox(height: 12),
-                        ElevatedButton(
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: widget.config.primaryColor,
-                            foregroundColor: Colors.white,
-                          ),
-                          onPressed: () => _fetchProducts(),
-                          child: const Text('تلاش مجدد'),
-                        ),
-                      ],
-                    ),
-                  )
-                : _items.isEmpty
-                    ? const Center(
-                        child: Text(
-                          'محصولی در این دسته‌بندی یافت نشد.',
-                          style: TextStyle(color: Dk.text3),
-                        ),
-                      )
-                    : Column(
-                        children: <Widget>[
-                          Expanded(
-                            child: GridView.builder(
-                              controller: _scroll,
-                              padding: const EdgeInsets.all(10),
-                              gridDelegate:
-                                  const SliverGridDelegateWithFixedCrossAxisCount(
-                                crossAxisCount: 2,
-                                childAspectRatio: 0.62,
-                                mainAxisSpacing: 8,
-                                crossAxisSpacing: 8,
+        body: Column(
+          children: <Widget>[
+            // تنظیم ۲۳ | نوار بالای همهٔ حالتها ثابت است (لودینگ/خطا/خالی/
+            // گرید) تا با نتیجهٔ خالیِ فیلتر، کاربر قفل نشود.
+            if (widget.config.sortFilterEnabled)
+              SortFilterBar(
+                sort: _sort,
+                inStockOnly: _inStockOnly,
+                primaryColor: widget.config.primaryColor,
+                onChanged: (String sort, bool inStockOnly) {
+                  setState(() {
+                    _sort = sort;
+                    _inStockOnly = inStockOnly;
+                  });
+                  _fetchProducts();
+                },
+              ),
+            Expanded(
+              child: _loading
+                  ? const Padding(
+                      padding: EdgeInsets.all(10),
+                      child: SkeletonProductGrid(),
+                    )
+                  : _error != null
+                      ? Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: <Widget>[
+                              Text(_error!,
+                                  style: const TextStyle(color: Colors.red)),
+                              const SizedBox(height: 12),
+                              ElevatedButton(
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: widget.config.primaryColor,
+                                  foregroundColor: Colors.white,
+                                ),
+                                onPressed: () => _fetchProducts(),
+                                child: const Text('تلاش مجدد'),
                               ),
-                              itemCount: _items.length,
-                              itemBuilder: (BuildContext context, int index) {
-                                final WpItem item = _items[index];
-                                return ProductGridCard(
-                                  item: item,
-                                  primaryColor: widget.config.primaryColor,
-                                  onTap: () => Navigator.of(context).push(
-                                    MaterialPageRoute<void>(
-                                      builder: (_) => NativeDetailScreen(
+                            ],
+                          ),
+                        )
+                      : _items.isEmpty
+                          ? const Center(
+                              child: Text(
+                                'محصولی در این دسته‌بندی یافت نشد.',
+                                style: TextStyle(color: Dk.text3),
+                              ),
+                            )
+                          : Column(
+                              children: <Widget>[
+                                Expanded(
+                                  child: GridView.builder(
+                                    controller: _scroll,
+                                    padding: const EdgeInsets.all(10),
+                                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                                      crossAxisCount: 2,
+                                      childAspectRatio: 0.62,
+                                      mainAxisSpacing: 8,
+                                      crossAxisSpacing: 8,
+                                    ),
+                                    itemCount: _items.length,
+                                    itemBuilder: (BuildContext context, int index) {
+                                      final WpItem item = _items[index];
+                                      return ProductGridCard(
                                         item: item,
-                                        config: widget.config,
+                                        primaryColor: widget.config.primaryColor,
+                                        onTap: () => Navigator.of(context).push(
+                                          MaterialPageRoute<void>(
+                                            builder: (_) => NativeDetailScreen(
+                                              item: item,
+                                              config: widget.config,
+                                            ),
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
+                                // لودر اسکرول بی‌نهایت | زیر گرید، وسط صفحه
+                                if (_loadingMore)
+                                  const Padding(
+                                    padding: EdgeInsets.symmetric(vertical: 16),
+                                    child: Center(
+                                      child: SizedBox(
+                                        width: 24,
+                                        height: 24,
+                                        child: CircularProgressIndicator(
+                                          strokeWidth: 2.5,
+                                        ),
                                       ),
                                     ),
                                   ),
-                                );
-                              },
+                              ],
                             ),
-                          ),
-                          // لودر اسکرول بی‌نهایت | زیر گرید، وسط صفحه
-                          if (_loadingMore)
-                            const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 16),
-                              child: Center(
-                                child: SizedBox(
-                                  width: 24,
-                                  height: 24,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2.5,
-                                  ),
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
+            ),
+          ],
+        ),
       ),
     );
   }

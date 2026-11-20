@@ -106,6 +106,8 @@ class AppConfig {
     this.recentlyViewedEnabled = false,
     // تنظیم ۲۲ | تاریخچهٔ جستجوهای اخیر.
     this.searchHistoryEnabled = false,
+    // تنظیم ۲۳ | مرتب‌سازی و فیلتر موجودی.
+    this.sortFilterEnabled = false,
     this.announcement = const AppAnnouncement(),
   });
 
@@ -169,6 +171,8 @@ class AppConfig {
   final bool recentlyViewedEnabled;
   // تنظیم ۲۲ | تاریخچهٔ جستجوهای اخیر | چیپ‌های سریع در صفحهٔ جستجو.
   final bool searchHistoryEnabled;
+  // تنظیم ۲۳ | مرتب‌سازی و فیلتر موجودی | نوار بالای محصولات.
+  final bool sortFilterEnabled;
   final AppAnnouncement announcement;
 
   /// لوگوی نهایی اسپلش | اولویت حلشده سمت وردپرس، وگرنه:
@@ -536,6 +540,7 @@ class AppConfig {
       orderTimelineEnabled: orderTimelineEnabled,
       recentlyViewedEnabled: recentlyViewedEnabled,
       searchHistoryEnabled: searchHistoryEnabled,
+      sortFilterEnabled: sortFilterEnabled,
       // این دو مقدار در زمان بیلد تثبیت شدهاند و هرگز از راه دور بازنویسی نمیشوند.
       splashLogoBundledUrl: pickText(
         'logo_bundled_url',
@@ -668,6 +673,10 @@ class AppConfig {
       searchHistoryEnabled: decoded.containsKey('search_history_enabled')
           ? decoded['search_history_enabled'] == true
           : searchHistoryEnabled,
+      // تنظیم ۲۳ | مرتب‌سازی و فیلتر موجودی | کلید در سطح ریشهٔ /config.
+      sortFilterEnabled: decoded.containsKey('sort_filter_enabled')
+          ? decoded['sort_filter_enabled'] == true
+          : sortFilterEnabled,
       bazaarUseLocalSignatureCheck:
           paymentBlock['use_local_signature_check'] == null
           ? bazaarUseLocalSignatureCheck
