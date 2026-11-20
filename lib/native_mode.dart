@@ -15,6 +15,7 @@ import 'main.dart';
 import 'product_reviews.dart';
 import 'profile_screen.dart';
 import 'recently_viewed.dart';
+import 'search_history.dart';
 import 'skeleton.dart';
 
 // --- توکن‌های طراحی (استخراج‌شده از دیجی‌کالا موبایل) ---
@@ -2570,6 +2571,24 @@ class _NativeSearchScreenState extends State<NativeSearchScreen> {
     });
   }
 
+  /// تنظیم ۲۲ | ثبت کوئری فقط در سابمیت (کیبورد/ذرهبین) | تایپهای میانیِ
+  /// جستجوی زنده هرگز ثبت نمیشوند | رشتهٔ کوتاهتر از ۲ نویسه در خودِ
+  /// manager رد میشود.
+  void _submitSearch(String query) {
+    SearchHistoryManager.instance.recordQuery(query);
+    _runSearch(query);
+  }
+
+  /// تنظیم ۲۲ | انتخاب چیپ تاریخچه | مکان‌نما به آخر کلمه میرود.
+  void _selectHistoryQuery(String query) {
+    _controller.value = TextEditingValue(
+      text: query,
+      selection: TextSelection.collapsed(offset: query.length),
+    );
+    SearchHistoryManager.instance.recordQuery(query);
+    _runSearch(query);
+  }
+
   Future<void> _runSearch(String query) async {
     final String trimmed = query.trim();
     if (trimmed.isEmpty) return;
@@ -2701,7 +2720,7 @@ class _NativeSearchScreenState extends State<NativeSearchScreen> {
                       textInputAction: TextInputAction.search,
                       textAlignVertical: TextAlignVertical.center,
                       onChanged: _onQueryChanged,
-                      onSubmitted: _runSearch,
+                      onSubmitted: _submitSearch,
                       style: const TextStyle(fontSize: 12.5, color: Dk.text1),
                       decoration: InputDecoration(
                         hintText: 'جستجوی نام محصول…',
@@ -2720,7 +2739,7 @@ class _NativeSearchScreenState extends State<NativeSearchScreen> {
                           ),
                           icon: const Icon(Icons.search, size: 20),
                           color: Dk.text3,
-                          onPressed: () => _runSearch(_controller.text),
+                          onPressed: () => _submitSearch(_controller.text),
                         ),
                       ),
                     ),
@@ -2750,48 +2769,64 @@ class _NativeSearchScreenState extends State<NativeSearchScreen> {
     }
     final List<WpItem>? results = _results;
     if (results == null) {
-      // حالت اولیه: پیشنهادهای پرطرفدار (تنظیم نیتیو شماره ۵) یا راهنما
-      final List<String> suggestions = widget.effectiveSuggestions;
-      if (suggestions.isNotEmpty) {
-        return ListView(
-          padding: const EdgeInsets.all(14),
-          children: <Widget>[
-            const Text(
-              'جستجوهای پرطرفدار',
-              style: TextStyle(
-                fontSize: 13.5,
-                fontWeight: FontWeight.w800,
-                color: Dk.text1,
+      // حالت اولیه: تاریخچهٔ جستجو (تنظیم ۲۲) + پیشنهادهای پرطرفدار (تنظیم ۵)
+      // داخل ListenableBuilder | پاک‌کردن تاریخچه بلافاصله به متن راهنما
+      // برمیگردد، حتی وقتی پیشنهادها خالی باشند.
+      return ListenableBuilder(
+        listenable: SearchHistoryManager.instance,
+        builder: (BuildContext context, Widget? _) {
+          final List<String> suggestions = widget.effectiveSuggestions;
+          final bool showHistory =
+              SearchHistoryManager.instance.uiEnabled &&
+                  SearchHistoryManager.instance.queries.isNotEmpty;
+          if (!showHistory && suggestions.isEmpty) {
+            return const Center(
+              child: Padding(
+                // ۲۴ پیکسل استاندارد + ۳ پیکسل اضافه فاصله از راست
+                padding: EdgeInsets.fromLTRB(24, 0, 27, 0),
+                child: Text(
+                  'نام محصولی که دنبالش هستید را بنویسید. نتایج زنده می‌آیند.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Dk.text2, fontSize: 13, height: 1.9),
+                ),
               ),
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: <Widget>[
-                for (final String term in suggestions)
-                  _SuggestionChip(
-                    term: term,
-                    onTap: () {
-                      _controller.text = term;
-                      _runSearch(term);
-                    },
+            );
+          }
+          return ListView(
+            padding: const EdgeInsets.all(14),
+            children: <Widget>[
+              // تنظیم ۲۲ | جستجوهای اخیر | با پاک‌کردن تکی/همه.
+              if (showHistory)
+                _SearchHistorySection(onSelect: _selectHistoryQuery),
+              if (suggestions.isNotEmpty) ...<Widget>[
+                if (showHistory) const SizedBox(height: 18),
+                const Text(
+                  'جستجوهای پرطرفدار',
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w800,
+                    color: Dk.text1,
                   ),
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: <Widget>[
+                    for (final String term in suggestions)
+                      _SuggestionChip(
+                        term: term,
+                        onTap: () {
+                          _controller.text = term;
+                          _runSearch(term);
+                        },
+                      ),
+                  ],
+                ),
               ],
-            ),
-          ],
-        );
-      }
-      return const Center(
-        child: Padding(
-          // ۲۴ پیکسل استاندارد + ۳ پیکسل اضافه فاصله از راست
-          padding: EdgeInsets.fromLTRB(24, 0, 27, 0),
-          child: Text(
-            'نام محصولی که دنبالش هستید را بنویسید. نتایج زنده می‌آیند.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Dk.text2, fontSize: 13, height: 1.9),
-          ),
-        ),
+            ],
+          );
+        },
       );
     }
     if (results.isEmpty) {
@@ -2815,12 +2850,16 @@ class _NativeSearchScreenState extends State<NativeSearchScreen> {
               return ProductGridCard(
                 item: item,
                 primaryColor: widget.config.primaryColor,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) =>
-                        NativeDetailScreen(item: item, config: widget.config),
-                  ),
-                ),
+                onTap: () {
+                  // تنظیم ۲۲ | کوئری جستجویی که به نتیجه رسید با لمس ثبت میشود.
+                  SearchHistoryManager.instance.recordQuery(_activeQuery);
+                  Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) =>
+                          NativeDetailScreen(item: item, config: widget.config),
+                    ),
+                  );
+                },
               );
             },
           ),
@@ -3765,6 +3804,114 @@ class _RecentlyViewedSection extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// تنظیم ۲۲ | بخش «جستجوهای اخیر» | تیتر + پاک‌کردن همه + چیپ‌های سریع |
+/// کاملاً واکنش‌گرا با ListenableBuilder.
+class _SearchHistorySection extends StatelessWidget {
+  const _SearchHistorySection({required this.onSelect});
+
+  final ValueChanged<String> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: SearchHistoryManager.instance,
+      builder: (BuildContext context, Widget? _) {
+        final List<String> queries = SearchHistoryManager.instance.queries;
+        if (queries.isEmpty) {
+          return const SizedBox.shrink();
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                const Expanded(
+                  child: Text(
+                    'جستجوهای اخیر',
+                    style: TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w800,
+                      color: Dk.text1,
+                    ),
+                  ),
+                ),
+                InkWell(
+                  onTap: () => SearchHistoryManager.instance.clearAll(),
+                  borderRadius: BorderRadius.circular(8),
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                    child: Text(
+                      'پاک کردن همه',
+                      style: TextStyle(fontSize: 12, color: Dk.text3),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: <Widget>[
+                for (final String query in queries)
+                  _SearchHistoryChip(query: query, onSelect: onSelect),
+              ],
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// چیپ تاریخچه | آیکون ساعت + متن کوئری + ضربدر حذف تکی.
+class _SearchHistoryChip extends StatelessWidget {
+  const _SearchHistoryChip({required this.query, required this.onSelect});
+
+  final String query;
+  final ValueChanged<String> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: () => onSelect(query),
+      borderRadius: BorderRadius.circular(999),
+      child: Container(
+        padding: const EdgeInsets.only(right: 12, left: 4, top: 5, bottom: 5),
+        decoration: BoxDecoration(
+          color: Dk.surface2,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: Dk.border),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            const Icon(Icons.history_rounded, size: 15, color: Dk.text3),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                query,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 12.5, color: Dk.text1),
+              ),
+            ),
+            const SizedBox(width: 4),
+            InkWell(
+              onTap: () => SearchHistoryManager.instance.removeQuery(query),
+              borderRadius: BorderRadius.circular(999),
+              child: const Padding(
+                padding: EdgeInsets.all(4),
+                child: Icon(Icons.close_rounded, size: 14, color: Dk.text3),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

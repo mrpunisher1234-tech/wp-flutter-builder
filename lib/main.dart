@@ -18,6 +18,7 @@ import 'favorites_screen.dart';
 import 'native_mode.dart';
 import 'payment_result_screen.dart';
 import 'recently_viewed.dart';
+import 'search_history.dart';
 import 'splash_screen.dart';
 
 /// بنر اسلایدر خانه | تصویر + لینک مقصد (لینک خالی = کلیک‌ناپذیر).
@@ -103,6 +104,8 @@ class AppConfig {
     this.orderTimelineEnabled = false,
     // تنظیم ۲۱ | بازدیدهای اخیر.
     this.recentlyViewedEnabled = false,
+    // تنظیم ۲۲ | تاریخچهٔ جستجوهای اخیر.
+    this.searchHistoryEnabled = false,
     this.announcement = const AppAnnouncement(),
   });
 
@@ -164,6 +167,8 @@ class AppConfig {
   final bool orderTimelineEnabled;
   // تنظیم ۲۱ | بازدیدهای اخیر | ردیف افقی در خانه | ذخیره روی دستگاه.
   final bool recentlyViewedEnabled;
+  // تنظیم ۲۲ | تاریخچهٔ جستجوهای اخیر | چیپ‌های سریع در صفحهٔ جستجو.
+  final bool searchHistoryEnabled;
   final AppAnnouncement announcement;
 
   /// لوگوی نهایی اسپلش | اولویت حلشده سمت وردپرس، وگرنه:
@@ -530,6 +535,7 @@ class AppConfig {
       relatedProductsEnabled: relatedProductsEnabled,
       orderTimelineEnabled: orderTimelineEnabled,
       recentlyViewedEnabled: recentlyViewedEnabled,
+      searchHistoryEnabled: searchHistoryEnabled,
       // این دو مقدار در زمان بیلد تثبیت شدهاند و هرگز از راه دور بازنویسی نمیشوند.
       splashLogoBundledUrl: pickText(
         'logo_bundled_url',
@@ -658,6 +664,10 @@ class AppConfig {
       recentlyViewedEnabled: decoded.containsKey('recently_viewed_enabled')
           ? decoded['recently_viewed_enabled'] == true
           : recentlyViewedEnabled,
+      // تنظیم ۲۲ | تاریخچهٔ جستجوهای اخیر | کلید در سطح ریشهٔ /config.
+      searchHistoryEnabled: decoded.containsKey('search_history_enabled')
+          ? decoded['search_history_enabled'] == true
+          : searchHistoryEnabled,
       bazaarUseLocalSignatureCheck:
           paymentBlock['use_local_signature_check'] == null
           ? bazaarUseLocalSignatureCheck
@@ -848,13 +858,15 @@ class _SplashGateState extends State<_SplashGate>
   int _lastAnnouncementCycle = -1;
   DateTime? _lastRemoteSettingsRefresh;
 
-  /// تنظیمهای ۱۸ و ۲۱ | گیت نمایش قلبها و بازدیدهای اخیر همیشه با همین
-  /// _current همگام میشود | WpToFlutterApp فقط با کانفیگ سردِ داخل APK
-  /// بیلد میشود و با آمدن /config زنده هرگز دوباره اجرا نمیشود | پس
-  /// همگامسازی اینجاست و همیشه بیرون از build، بعد از هر جایگذاری _current.
+  /// تنظیمهای ۱۸ و ۲۱ و ۲۲ | گیت نمایش قلبها، بازدیدهای اخیر و تاریخچهٔ
+  /// جستجو همیشه با همین _current همگام میشود | WpToFlutterApp فقط با
+  /// کانفیگ سردِ داخل APK بیلد میشود و با آمدن /config زنده هرگز دوباره
+  /// اجرا نمیشود | پس همگامسازی اینجاست و همیشه بیرون از build، بعد از
+  /// هر جایگذاری _current.
   void _syncLocalUiToggles() {
     FavoritesManager.instance.setUiEnabled(_current.favoritesEnabled);
     RecentlyViewedManager.instance.setUiEnabled(_current.recentlyViewedEnabled);
+    SearchHistoryManager.instance.setUiEnabled(_current.searchHistoryEnabled);
   }
 
   @override
