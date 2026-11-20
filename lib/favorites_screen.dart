@@ -60,7 +60,7 @@ class FavoritesManager extends ChangeNotifier {
         if (_snapshots.containsKey(item.id)) {
           _snapshots.remove(item.id);
         } else {
-          _snapshots[item.id] = _snapshotOf(item);
+          _snapshots[item.id] = wpItemSnapshot(item);
         }
       });
 
@@ -153,106 +153,113 @@ class FavoritesManager extends ChangeNotifier {
   /// اسنپ‌شات کامل | همهٔ فیلدهایی که NativeDetailScreen از خود WpItem
   /// میخواند (گالری | ویژگیها | توضیحات | انبار | مرتبطها) حفظ میشوند |
   /// related یکسطح بازتولید میشود و در پیلودهای واقعی ته دارد.
-  Map<String, dynamic> _snapshotOf(WpItem item) => <String, dynamic>{
-        'id': item.id,
-        'type': item.type,
-        'title': item.title,
-        'excerpt': item.excerpt,
-        'content': item.content,
-        'url': item.url,
-        'featured_image': item.featuredImage,
-        'price': item.price,
-        'regular_price': item.regularPrice,
-        'sale_price': item.salePrice,
-        'sku': item.sku,
-        'in_stock': item.inStock,
-        'purchasable': item.purchasable,
-        'on_sale': item.onSale,
-        'stock_quantity': item.stockQuantity,
-        'rating': item.rating,
-        'reviews_count': item.reviewsCount,
-        'gallery_images': item.galleryImages,
-        'attributes': item.attributes
-            .map(
-              (WpAttribute attribute) => <String, dynamic>{
-                'name': attribute.name,
-                'slug': attribute.slug,
-                'options': attribute.options,
-                'variation': attribute.variation,
-              },
-            )
-            .toList(growable: false),
-        'related_products': item.relatedProducts
-            .map(_snapshotOf)
-            .toList(growable: false),
-        'category_names': item.categoryNames,
-        // تنظیم ۱۹ | اسلاگ دستهها | برای fallback همدسته در صفحهٔ جزئیات.
-        'category_slugs': item.categorySlugs,
-      };
+  Map<String, dynamic> _snapshotOf(WpItem item) => wpItemSnapshot(item);
 
-  WpItem _itemFromSnapshot(Map<String, dynamic> map) => WpItem(
-        id: (map['id'] as num?)?.toInt() ?? 0,
-        type: '${map['type'] ?? 'product'}',
-        title: '${map['title'] ?? ''}',
-        excerpt: '${map['excerpt'] ?? ''}',
-        content: '${map['content'] ?? ''}',
-        url: '${map['url'] ?? ''}',
-        featuredImage: '${map['featured_image'] ?? ''}',
-        price: '${map['price'] ?? ''}',
-        regularPrice: '${map['regular_price'] ?? ''}',
-        salePrice: '${map['sale_price'] ?? ''}',
-        sku: '${map['sku'] ?? ''}',
-        inStock: map['in_stock'] != false,
-        purchasable: map['purchasable'] != false,
-        onSale: map['on_sale'] == true,
-        stockQuantity: (map['stock_quantity'] as num?)?.toInt(),
-        rating: (map['rating'] as num?)?.toDouble() ?? 0,
-        reviewsCount: (map['reviews_count'] as num?)?.toInt() ?? 0,
-        galleryImages: (map['gallery_images'] is List
-                ? map['gallery_images'] as List
-                : const <dynamic>[])
-            .map((dynamic row) => AppConfig.mapEmulatorUrl('$row'))
-            .where((String url) => url.isNotEmpty)
-            .toList(growable: false),
-        attributes: (map['attributes'] is List
-                ? map['attributes'] as List
-                : const <dynamic>[])
-            .whereType<Map>()
-            .map(
-              (Map row) => WpAttribute(
-                name: '${row['name'] ?? ''}',
-                slug: '${row['slug'] ?? ''}',
-                options: (row['options'] is List
-                        ? row['options'] as List
-                        : const <dynamic>[])
-                    .map((dynamic option) => '$option')
-                    .toList(growable: false),
-                variation: row['variation'] == true,
-              ),
-            )
-            .toList(growable: false),
-        relatedProducts: (map['related_products'] is List
-                ? map['related_products'] as List
-                : const <dynamic>[])
-            .whereType<Map>()
-            .map(
-              (Map row) =>
-                  _itemFromSnapshot(row.cast<String, dynamic>()),
-            )
-            .toList(growable: false),
-        categoryNames: (map['category_names'] is List
-                ? map['category_names'] as List
-                : const <dynamic>[])
-            .map((dynamic row) => '$row')
-            .toList(growable: false),
-        categorySlugs: (map['category_slugs'] is List
-                ? map['category_slugs'] as List
-                : const <dynamic>[])
-            .map((dynamic row) => '$row')
-            .where((String slug) => slug.isNotEmpty)
-            .toList(growable: false),
-      );
+  WpItem _itemFromSnapshot(Map<String, dynamic> map) =>
+      wpItemFromSnapshot(map);
 }
+
+/// هلپر مشترک اسنپ‌شات | FavoritesManager و RecentlyViewedManager هر دو
+/// همین تبدیل را استفاده میکنند تا سریالایزیشن دو بار نوشته نشود.
+Map<String, dynamic> wpItemSnapshot(WpItem item) => <String, dynamic>{
+      'id': item.id,
+      'type': item.type,
+      'title': item.title,
+      'excerpt': item.excerpt,
+      'content': item.content,
+      'url': item.url,
+      'featured_image': item.featuredImage,
+      'price': item.price,
+      'regular_price': item.regularPrice,
+      'sale_price': item.salePrice,
+      'sku': item.sku,
+      'in_stock': item.inStock,
+      'purchasable': item.purchasable,
+      'on_sale': item.onSale,
+      'stock_quantity': item.stockQuantity,
+      'rating': item.rating,
+      'reviews_count': item.reviewsCount,
+      'gallery_images': item.galleryImages,
+      'attributes': item.attributes
+          .map(
+            (WpAttribute attribute) => <String, dynamic>{
+              'name': attribute.name,
+              'slug': attribute.slug,
+              'options': attribute.options,
+              'variation': attribute.variation,
+            },
+          )
+          .toList(growable: false),
+      'related_products': item.relatedProducts
+          .map(wpItemSnapshot)
+          .toList(growable: false),
+      'category_names': item.categoryNames,
+      // تنظیم ۱۹ | اسلاگ دستهها | برای fallback همدسته در صفحهٔ جزئیات.
+      'category_slugs': item.categorySlugs,
+    };
+
+/// بازخوانی اسنپ‌شات | آدرسهای تصویر از mapEmulatorUrl میگذرند.
+WpItem wpItemFromSnapshot(Map<String, dynamic> map) => WpItem(
+      id: (map['id'] as num?)?.toInt() ?? 0,
+      type: '${map['type'] ?? 'product'}',
+      title: '${map['title'] ?? ''}',
+      excerpt: '${map['excerpt'] ?? ''}',
+      content: '${map['content'] ?? ''}',
+      url: '${map['url'] ?? ''}',
+      featuredImage: '${map['featured_image'] ?? ''}',
+      price: '${map['price'] ?? ''}',
+      regularPrice: '${map['regular_price'] ?? ''}',
+      salePrice: '${map['sale_price'] ?? ''}',
+      sku: '${map['sku'] ?? ''}',
+      inStock: map['in_stock'] != false,
+      purchasable: map['purchasable'] != false,
+      onSale: map['on_sale'] == true,
+      stockQuantity: (map['stock_quantity'] as num?)?.toInt(),
+      rating: (map['rating'] as num?)?.toDouble() ?? 0,
+      reviewsCount: (map['reviews_count'] as num?)?.toInt() ?? 0,
+      galleryImages: (map['gallery_images'] is List
+              ? map['gallery_images'] as List
+              : const <dynamic>[])
+          .map((dynamic row) => AppConfig.mapEmulatorUrl('$row'))
+          .where((String url) => url.isNotEmpty)
+          .toList(growable: false),
+      attributes: (map['attributes'] is List
+              ? map['attributes'] as List
+              : const <dynamic>[])
+          .whereType<Map>()
+          .map(
+            (Map row) => WpAttribute(
+              name: '${row['name'] ?? ''}',
+              slug: '${row['slug'] ?? ''}',
+              options: (row['options'] is List
+                      ? row['options'] as List
+                      : const <dynamic>[])
+                  .map((dynamic option) => '$option')
+                  .toList(growable: false),
+              variation: row['variation'] == true,
+            ),
+          )
+          .toList(growable: false),
+      relatedProducts: (map['related_products'] is List
+              ? map['related_products'] as List
+              : const <dynamic>[])
+          .whereType<Map>()
+          .map(
+            (Map row) => wpItemFromSnapshot(row.cast<String, dynamic>()),
+          )
+          .toList(growable: false),
+      categoryNames: (map['category_names'] is List
+              ? map['category_names'] as List
+              : const <dynamic>[])
+          .map((dynamic row) => '$row')
+          .toList(growable: false),
+      categorySlugs: (map['category_slugs'] is List
+              ? map['category_slugs'] as List
+              : const <dynamic>[])
+          .map((dynamic row) => '$row')
+          .where((String slug) => slug.isNotEmpty)
+          .toList(growable: false),
+    );
 
 /// صفحهٔ علاقه‌مندی‌ها | گرید دوتایی با همان کارت گرید خانه | حالت خالی با
 /// الگوی دایره+آیکون+متن | لمس هر کارت → صفحهٔ جزئیات.

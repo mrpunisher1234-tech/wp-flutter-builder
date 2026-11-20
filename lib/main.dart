@@ -17,6 +17,7 @@ import 'announcement.dart';
 import 'favorites_screen.dart';
 import 'native_mode.dart';
 import 'payment_result_screen.dart';
+import 'recently_viewed.dart';
 import 'splash_screen.dart';
 
 /// بنر اسلایدر خانه | تصویر + لینک مقصد (لینک خالی = کلیک‌ناپذیر).
@@ -100,6 +101,8 @@ class AppConfig {
     this.relatedProductsEnabled = false,
     // تنظیم ۲۰ | تایم‌لاین وضعیت سفارش.
     this.orderTimelineEnabled = false,
+    // تنظیم ۲۱ | بازدیدهای اخیر.
+    this.recentlyViewedEnabled = false,
     this.announcement = const AppAnnouncement(),
   });
 
@@ -159,6 +162,8 @@ class AppConfig {
   final bool relatedProductsEnabled;
   // تنظیم ۲۰ | تایم‌لاین وضعیت سفارش | نمایش در جزئیات سفارش.
   final bool orderTimelineEnabled;
+  // تنظیم ۲۱ | بازدیدهای اخیر | ردیف افقی در خانه | ذخیره روی دستگاه.
+  final bool recentlyViewedEnabled;
   final AppAnnouncement announcement;
 
   /// لوگوی نهایی اسپلش | اولویت حلشده سمت وردپرس، وگرنه:
@@ -524,6 +529,7 @@ class AppConfig {
       favoritesEnabled: favoritesEnabled,
       relatedProductsEnabled: relatedProductsEnabled,
       orderTimelineEnabled: orderTimelineEnabled,
+      recentlyViewedEnabled: recentlyViewedEnabled,
       // این دو مقدار در زمان بیلد تثبیت شدهاند و هرگز از راه دور بازنویسی نمیشوند.
       splashLogoBundledUrl: pickText(
         'logo_bundled_url',
@@ -648,6 +654,10 @@ class AppConfig {
       orderTimelineEnabled: decoded.containsKey('order_timeline_enabled')
           ? decoded['order_timeline_enabled'] == true
           : orderTimelineEnabled,
+      // تنظیم ۲۱ | بازدیدهای اخیر | کلید در سطح ریشهٔ /config.
+      recentlyViewedEnabled: decoded.containsKey('recently_viewed_enabled')
+          ? decoded['recently_viewed_enabled'] == true
+          : recentlyViewedEnabled,
       bazaarUseLocalSignatureCheck:
           paymentBlock['use_local_signature_check'] == null
           ? bazaarUseLocalSignatureCheck
@@ -838,12 +848,13 @@ class _SplashGateState extends State<_SplashGate>
   int _lastAnnouncementCycle = -1;
   DateTime? _lastRemoteSettingsRefresh;
 
-  /// تنظیم ۱۸ | گیت نمایش قلبها همیشه با همین _current همگام میشود |
-  /// WpToFlutterApp فقط با کانفیگ سردِ داخل APK بیلد میشود و با آمدن
-  /// /config زنده هرگز دوباره اجرا نمیشود | پس همگامسازی اینجاست و
-  /// همیشه بیرون از build، دقیقاً بعد از هر جایگذاری _current.
-  void _syncFavoritesUi() {
+  /// تنظیمهای ۱۸ و ۲۱ | گیت نمایش قلبها و بازدیدهای اخیر همیشه با همین
+  /// _current همگام میشود | WpToFlutterApp فقط با کانفیگ سردِ داخل APK
+  /// بیلد میشود و با آمدن /config زنده هرگز دوباره اجرا نمیشود | پس
+  /// همگامسازی اینجاست و همیشه بیرون از build، بعد از هر جایگذاری _current.
+  void _syncLocalUiToggles() {
     FavoritesManager.instance.setUiEnabled(_current.favoritesEnabled);
+    RecentlyViewedManager.instance.setUiEnabled(_current.recentlyViewedEnabled);
   }
 
   @override
@@ -851,7 +862,7 @@ class _SplashGateState extends State<_SplashGate>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _current = widget.config;
-    _syncFavoritesUi();
+    _syncLocalUiToggles();
 
     // نسخه نیتیو سیگنال «آماده شد» ندارد و محتوایش از ابتدا هست، پس فقط حداقل زمان.
     _contentReady = _current.isNative;
@@ -868,7 +879,7 @@ class _SplashGateState extends State<_SplashGate>
           _pending = null;
           if (pending != null) {
             _current = pending;
-            _syncFavoritesUi();
+            _syncLocalUiToggles();
           }
         });
         WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1059,7 +1070,7 @@ class _SplashGateState extends State<_SplashGate>
         if (mounted) {
           setState(() {
             _current = updated;
-            _syncFavoritesUi();
+            _syncLocalUiToggles();
           });
           WidgetsBinding.instance.addPostFrameCallback((_) {
             unawaited(_maybeShowAnnouncement());

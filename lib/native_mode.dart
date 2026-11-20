@@ -14,6 +14,7 @@ import 'favorites_screen.dart';
 import 'main.dart';
 import 'product_reviews.dart';
 import 'profile_screen.dart';
+import 'recently_viewed.dart';
 import 'skeleton.dart';
 
 // --- توکن‌های طراحی (استخراج‌شده از دیجی‌کالا موبایل) ---
@@ -1408,6 +1409,10 @@ class _NativeHomeScreenState extends State<NativeHomeScreen> {
                         ),
                       ),
                     ),
+
+                  // تنظیم ۲۱ | بازدیدهای اخیر | با تیک ادمین و وقتی چیزی
+                  // دیده شده باشد | دکمهٔ «پاک کردن» در هدر ردیف.
+                  _RecentlyViewedSection(config: widget.config),
 
                   // گرید محصولات | کلید روی کل ناحیه است تا اسکرولِ
                   // لحظه‌ی کلیک به اسکلتون هم برسد، نه فقط محتوا
@@ -2902,18 +2907,22 @@ class NativeDetailScreen extends StatelessWidget {
               ? <String>[item.featuredImage]
               : <String>[]);
 
-    return Directionality(
-      textDirection: TextDirection.rtl,
-      child: Scaffold(
-        backgroundColor: Colors.white,
-        appBar: AppBar(
-          title: Text(
-            item.title,
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.bold,
-              color: Dk.text1,
-            ),
+    // تنظیم ۲۱ | ثبت بازدید | رکورد بعد از فریم اول انجام میشود تا
+    // notifyListeners هرگز داخل build نیفتد | تغییر item هم پوشش دارد.
+    return _RecentlyViewedRecorder(
+      item: item,
+      child: Directionality(
+        textDirection: TextDirection.rtl,
+        child: Scaffold(
+          backgroundColor: Colors.white,
+          appBar: AppBar(
+            title: Text(
+              item.title,
+              style: const TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.bold,
+                color: Dk.text1,
+              ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
@@ -3319,6 +3328,7 @@ class NativeDetailScreen extends StatelessWidget {
           ),
         ),
       ),
+      ),
     );
   }
 }
@@ -3607,6 +3617,154 @@ class _RelatedProductsSectionState extends State<_RelatedProductsSection> {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// تنظیم ۲۱ | رکوردگر بازدید | دور کل صفحهٔ جزئیات | رکورد در
+/// post-frame callback انجام میشود تا notifyListeners هرگز داخل build
+/// نیفتد | تغییر شناسهٔ محصول هم پوشش داده میشود.
+class _RecentlyViewedRecorder extends StatefulWidget {
+  const _RecentlyViewedRecorder({required this.item, required this.child});
+
+  final WpItem item;
+  final Widget child;
+
+  @override
+  State<_RecentlyViewedRecorder> createState() =>
+      _RecentlyViewedRecorderState();
+}
+
+class _RecentlyViewedRecorderState extends State<_RecentlyViewedRecorder> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        RecentlyViewedManager.instance.recordView(widget.item);
+      }
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _RecentlyViewedRecorder oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.item.id != widget.item.id) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          RecentlyViewedManager.instance.recordView(widget.item);
+        }
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
+}
+
+/// تنظیم ۲۱ | ردیف افقی «بازدیدهای اخیر شما» در خانه | فقط با تیک ادمین و
+/// وقتی چیزی دیده شده باشد | کارت‌ها همان ProductGridCard با نسبت گرید خانه.
+class _RecentlyViewedSection extends StatelessWidget {
+  const _RecentlyViewedSection({required this.config});
+
+  final AppConfig config;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: RecentlyViewedManager.instance,
+      builder: (BuildContext context, Widget? _) {
+        if (!RecentlyViewedManager.instance.uiEnabled) {
+          return const SizedBox.shrink();
+        }
+        final List<WpItem> items = RecentlyViewedManager.instance.items;
+        if (items.isEmpty) {
+          return const SizedBox.shrink();
+        }
+        return Container(
+          color: Colors.white,
+          padding: const EdgeInsets.only(bottom: 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+                child: Row(
+                  children: <Widget>[
+                    const Expanded(
+                      child: Text(
+                        'بازدیدهای اخیر شما',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                          color: Dk.text1,
+                        ),
+                      ),
+                    ),
+                    InkWell(
+                      onTap: () =>
+                          RecentlyViewedManager.instance.clearAll(),
+                      borderRadius: BorderRadius.circular(8),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 4,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: const <Widget>[
+                            Icon(
+                              Icons.delete_outline_rounded,
+                              size: 16,
+                              color: Dk.text3,
+                            ),
+                            SizedBox(width: 4),
+                            Text(
+                              'پاک کردن',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Dk.text3,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              SizedBox(
+                height: 266,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  itemCount: items.length,
+                  separatorBuilder: (BuildContext context, int index) =>
+                      const SizedBox(width: 8),
+                  itemBuilder: (BuildContext context, int index) {
+                    final WpItem item = items[index];
+                    return SizedBox(
+                      width: 165,
+                      child: ProductGridCard(
+                        item: item,
+                        primaryColor: config.primaryColor,
+                        onTap: () => Navigator.of(context).push(
+                          MaterialPageRoute<void>(
+                            builder: (_) => NativeDetailScreen(
+                              config: config,
+                              item: item,
+                            ),
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }
