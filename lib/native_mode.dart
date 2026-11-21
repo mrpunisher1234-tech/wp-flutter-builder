@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -2959,6 +2960,60 @@ class _SuggestionChip extends StatelessWidget {
 }
 
 // --- صفحه جزئیات محصول (تکی) ---
+/// تنظیم ۲۴ | اشتراک‌گذاری محصول | متن نام + قیمت + لینک | شیت بومی
+/// اندروید از MainActivity (MethodChannel | بدون پکیج خارجی) | هرجا شیت
+/// باز نشد، متن کامل در کلیپ‌بورد کپی و به کاربر اعلام میشود.
+Future<void> _shareProduct(
+  BuildContext context,
+  WpItem item,
+  AppConfig config,
+) async {
+  // قیمت نهایی | حراج وقتی فعال است وگرنه قیمت عادی | formatToman خودش
+  // کلمهٔ تومان را میچسباند (باگ «تومان تومان» گرفته شد).
+  final String rawPrice =
+      (item.onSale && item.salePrice.isNotEmpty) ? item.salePrice : item.price;
+  final String price = rawPrice.isNotEmpty ? formatToman(rawPrice) : '';
+  final String link = item.url.isNotEmpty
+      ? item.url
+      : '${config.siteUrl.replaceFirst(RegExp(r'/+$'), '')}/?p=${item.id}';
+  final List<String> parts = <String>[
+    item.title,
+    if (price.isNotEmpty) price,
+    link,
+  ];
+  final String text = parts.join('\n');
+  bool shared = false;
+  if (Platform.isAndroid) {
+    try {
+      shared =
+          await const MethodChannel('wptf_share').invokeMethod<bool>(
+                'shareText',
+                <String, dynamic>{'text': text, 'title': item.title},
+              ) ??
+          false;
+    } catch (_) {
+      shared = false;
+    }
+  }
+  if (shared) {
+    return;
+  }
+  // فالبک | کپی کامل متن در کلیپ‌بورد.
+  await Clipboard.setData(ClipboardData(text: text));
+  if (context.mounted) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          'لینک محصول کپی شد',
+          style: TextStyle(color: Colors.white, fontSize: 13),
+        ),
+        backgroundColor: Colors.black,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+}
+
 class NativeDetailScreen extends StatelessWidget {
   final WpItem item;
   final AppConfig config;
@@ -3004,6 +3059,13 @@ class NativeDetailScreen extends StatelessWidget {
             overflow: TextOverflow.ellipsis,
           ),
           actions: <Widget>[
+            // تنظیم ۲۴ | اشتراک‌گذاری محصول | شیت بومی + فالبک کپی.
+            if (config.shareProductEnabled && item.isProduct)
+              IconButton(
+                tooltip: 'اشتراک‌گذاری',
+                onPressed: () => _shareProduct(context, item, config),
+                icon: const Icon(Icons.share_outlined, color: Dk.text1),
+              ),
             // تنظیم ۱۸ | قلب علاقه‌مندی | زنده و کنار آیکون سبد.
             if (config.favoritesEnabled)
               ListenableBuilder(

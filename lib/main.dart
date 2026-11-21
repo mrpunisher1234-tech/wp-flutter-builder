@@ -108,6 +108,8 @@ class AppConfig {
     this.searchHistoryEnabled = false,
     // تنظیم ۲۳ | مرتب‌سازی و فیلتر موجودی.
     this.sortFilterEnabled = false,
+    // تنظیم ۲۴ | اشتراک‌گذاری محصول.
+    this.shareProductEnabled = false,
     this.announcement = const AppAnnouncement(),
   });
 
@@ -173,6 +175,8 @@ class AppConfig {
   final bool searchHistoryEnabled;
   // تنظیم ۲۳ | مرتب‌سازی و فیلتر موجودی | نوار بالای محصولات.
   final bool sortFilterEnabled;
+  // تنظیم ۲۴ | اشتراک‌گذاری محصول | آیکون در نوار بالای صفحهٔ محصول.
+  final bool shareProductEnabled;
   final AppAnnouncement announcement;
 
   /// لوگوی نهایی اسپلش | اولویت حلشده سمت وردپرس، وگرنه:
@@ -540,6 +544,7 @@ class AppConfig {
       orderTimelineEnabled: orderTimelineEnabled,
       recentlyViewedEnabled: recentlyViewedEnabled,
       searchHistoryEnabled: searchHistoryEnabled,
+      shareProductEnabled: shareProductEnabled,
       sortFilterEnabled: sortFilterEnabled,
       // این دو مقدار در زمان بیلد تثبیت شدهاند و هرگز از راه دور بازنویسی نمیشوند.
       splashLogoBundledUrl: pickText(
@@ -677,6 +682,10 @@ class AppConfig {
       sortFilterEnabled: decoded.containsKey('sort_filter_enabled')
           ? decoded['sort_filter_enabled'] == true
           : sortFilterEnabled,
+      // تنظیم ۲۴ | اشتراک‌گذاری محصول | کلید در سطح ریشهٔ /config.
+      shareProductEnabled: decoded.containsKey('share_product_enabled')
+          ? decoded['share_product_enabled'] == true
+          : shareProductEnabled,
       bazaarUseLocalSignatureCheck:
           paymentBlock['use_local_signature_check'] == null
           ? bazaarUseLocalSignatureCheck
