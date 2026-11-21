@@ -114,6 +114,8 @@ class AppConfig {
     this.quickInquiryEnabled = false,
     this.quickInquiryWhatsapp = '',
     this.quickInquiryTelegram = '',
+    // تنظیم ۲۶ | موجود شد خبرم کن.
+    this.stockNotifyEnabled = false,
     this.announcement = const AppAnnouncement(),
   });
 
@@ -179,6 +181,8 @@ class AppConfig {
   final bool searchHistoryEnabled;
   // تنظیم ۲۳ | مرتب‌سازی و فیلتر موجودی | نوار بالای محصولات.
   final bool sortFilterEnabled;
+  // تنظیم ۲۶ | موجود شد خبرم کن | دکمه روی کالاهای ناموجود.
+  final bool stockNotifyEnabled;
   // تنظیم ۲۴ | اشتراک‌گذاری محصول | آیکون در نوار بالای صفحهٔ محصول.
   final bool shareProductEnabled;
   // تنظیم ۲۵ | مشاوره و استعلام سریع | تلفن از supportStorePhone میآید.
@@ -553,6 +557,7 @@ class AppConfig {
       recentlyViewedEnabled: recentlyViewedEnabled,
       searchHistoryEnabled: searchHistoryEnabled,
       shareProductEnabled: shareProductEnabled,
+      stockNotifyEnabled: stockNotifyEnabled,
       quickInquiryEnabled: quickInquiryEnabled,
       quickInquiryWhatsapp: quickInquiryWhatsapp,
       quickInquiryTelegram: quickInquiryTelegram,
@@ -693,6 +698,10 @@ class AppConfig {
       searchHistoryEnabled: decoded.containsKey('search_history_enabled')
           ? decoded['search_history_enabled'] == true
           : searchHistoryEnabled,
+      // تنظیم ۲۶ | موجود شد خبرم کن | کلید در سطح ریشهٔ /config.
+      stockNotifyEnabled: decoded.containsKey('stock_notify_enabled')
+          ? decoded['stock_notify_enabled'] == true
+          : stockNotifyEnabled,
       // تنظیم ۲۳ | مرتب‌سازی و فیلتر موجودی | کلید در سطح ریشهٔ /config.
       sortFilterEnabled: decoded.containsKey('sort_filter_enabled')
           ? decoded['sort_filter_enabled'] == true

@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -3470,11 +3471,21 @@ class NativeDetailScreen extends StatelessWidget {
                     // وضعیت انبار
                     if (item.isProduct) ...<Widget>[
                       const SizedBox(height: 10),
-                      if (!item.inStock)
+                      if (!item.inStock) ...<Widget>[
                         _StockBadge(
                           text: 'ناموجود',
                           color: const Color(0xFFD63638),
-                        )
+                        ),
+                        // تنظیم ۲۶ | موجود شد خبرم کن | فقط با تیک ادمین.
+                        if (config.stockNotifyEnabled)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 10),
+                            child: _StockNotifyButton(
+                              item: item,
+                              config: config,
+                            ),
+                          ),
+                      ]
                       else if (item.stockQuantity != null &&
                           item.stockQuantity! > 0 &&
                           item.stockQuantity! <= 5)
@@ -3968,6 +3979,20 @@ class _RecentlyViewedRecorder extends StatefulWidget {
       _RecentlyViewedRecorderState();
 }
 
+/// تنظیم ۲۶ | محصول موجود شده | شناسه از لیست محلی خبرم‌کنها پاک میشود
+/// تا چرخهٔ بعدیِ ناموجودی دوباره کار کند.
+Future<void> _clearStockNotifyIfInStock(WpItem item) async {
+  if (!item.inStock) return;
+  try {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final List<String> ids =
+        prefs.getStringList('wptf_stock_waitlist_ids') ?? <String>[];
+    if (ids.remove('${item.id}')) {
+      await prefs.setStringList('wptf_stock_waitlist_ids', ids);
+    }
+  } catch (_) {}
+}
+
 class _RecentlyViewedRecorderState extends State<_RecentlyViewedRecorder> {
   @override
   void initState() {
@@ -3975,6 +4000,7 @@ class _RecentlyViewedRecorderState extends State<_RecentlyViewedRecorder> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         RecentlyViewedManager.instance.recordView(widget.item);
+        unawaited(_clearStockNotifyIfInStock(widget.item));
       }
     });
   }
@@ -4320,6 +4346,327 @@ class SortFilterBar extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// تنظیم ۲۶ | دکمهٔ «موجود شد خبرم کن» | ثبت شماره روی سرور | واردشده با
+/// توکن و مهمان با دیالوگ شماره | وضعیت ثبت روی خود دستگاه نگه داشته میشود.
+class _StockNotifyButton extends StatefulWidget {
+  const _StockNotifyButton({required this.item, required this.config});
+
+  final WpItem item;
+  final AppConfig config;
+
+  @override
+  State<_StockNotifyButton> createState() => _StockNotifyButtonState();
+}
+
+class _StockNotifyButtonState extends State<_StockNotifyButton> {
+  static const String _prefsKey = 'wptf_stock_waitlist_ids';
+
+  bool _registered = false;
+  bool _busy = false;
+  TextEditingController? _guestPhoneController;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRegistered();
+  }
+
+  @override
+  void dispose() {
+    _guestPhoneController?.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadRegistered() async {
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      if (widget.item.inStock) {
+        // محصول موجود شده | شناسه از حافظه پاک میشود تا چرخهٔ بعدی کار کند.
+        final List<String> ids = prefs.getStringList(_prefsKey) ?? <String>[];
+        if (ids.remove('${widget.item.id}')) {
+          await prefs.setStringList(_prefsKey, ids);
+        }
+        return;
+      }
+      final List<String> ids = prefs.getStringList(_prefsKey) ?? <String>[];
+      if (!mounted) return;
+      setState(() => _registered = ids.contains('${widget.item.id}'));
+    } catch (_) {
+      // بدون وضعیت ذخیره | دکمه عادی میماند.
+    }
+  }
+
+  Future<void> _markRegistered() async {
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final List<String> ids = prefs.getStringList(_prefsKey) ?? <String>[];
+      if (!ids.contains('${widget.item.id}')) {
+        ids.add('${widget.item.id}');
+        await prefs.setStringList(_prefsKey, ids);
+      }
+    } catch (_) {}
+    if (mounted) setState(() => _registered = true);
+  }
+
+  /// موجود شده | شناسه از حافظه پاک میشود تا چرخهٔ بعدی کار کند.
+  Future<void> _clearRegistered() async {
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final List<String> ids = prefs.getStringList(_prefsKey) ?? <String>[];
+      if (ids.remove('${widget.item.id}')) {
+        await prefs.setStringList(_prefsKey, ids);
+      }
+    } catch (_) {}
+    if (mounted) setState(() => _registered = false);
+  }
+
+  void _notice(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          message,
+          style: const TextStyle(color: Colors.white, fontSize: 13),
+        ),
+        backgroundColor: Colors.black,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
+  /// ارسال درخواست ثبت | خروجی رکورد | needPhone یعنی حساب بدون شماره است.
+  Future<({bool ok, String message, bool needPhone, bool alreadyInStock})>
+      _postSubscribe({required String token, String phone = ''}) async {
+    HttpClient? client;
+    try {
+      client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
+      final HttpClientRequest request = await client
+          .postUrl(
+            Uri.parse(
+              '${widget.config.effectiveApiBaseUrl}stock-notify/subscribe',
+            ),
+          )
+          .timeout(const Duration(seconds: 15));
+      request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
+      request.write(
+        jsonEncode(<String, dynamic>{
+          'product_id': widget.item.id,
+          if (token.isNotEmpty) 'auth_token': token,
+          if (phone.isNotEmpty) 'phone': phone,
+        }),
+      );
+      final HttpClientResponse response = await request.close().timeout(
+        const Duration(seconds: 15),
+      );
+      final String raw = await response
+          .transform(utf8.decoder)
+          .join()
+          .timeout(const Duration(seconds: 15));
+      final dynamic decoded = jsonDecode(raw);
+      if (decoded is! Map<String, dynamic>) {
+        return (
+          ok: false,
+          message: 'خطا در ارتباط با سایت',
+          needPhone: false,
+          alreadyInStock: false,
+        );
+      }
+      final String message = decoded['message'] is String
+          ? decoded['message'] as String
+          : 'خطا در ارتباط با سایت';
+      final String errorCode =
+          decoded['code'] is String ? decoded['code'] as String : '';
+      return (
+        ok: response.statusCode == 200 && decoded['success'] == true,
+        message: message,
+        needPhone:
+            errorCode == 'wptf_bad_phone' || errorCode == 'wptf_login_required',
+        alreadyInStock: decoded['already_in_stock'] == true,
+      );
+    } catch (_) {
+      return (
+        ok: false,
+        message: 'خطا در ارتباط با سایت',
+        needPhone: false,
+        alreadyInStock: false,
+      );
+    } finally {
+      client?.close(force: true);
+    }
+  }
+
+  Future<void> _subscribe() async {
+    if (_busy) return;
+    if (_registered) {
+      // ثبت تکراری | بدون باز کردن دوبارهٔ دیالوگ شماره.
+      _notice('این محصول قبلاً در لیست اطلاع‌رسانی ثبت شده است ✓');
+      return;
+    }
+    setState(() => _busy = true);
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final String token = prefs.getString('wptf_auth_token') ?? '';
+      String phone = '';
+      if (token.isEmpty) {
+        phone = await _askGuestPhone();
+        if (!mounted) return;
+        if (phone.isEmpty) return;
+        if (!RegExp(r'^09\d{9}$').hasMatch(phone)) {
+          _notice('شمارهٔ موبایل معتبر نیست | با 09 شروع میشود');
+          return;
+        }
+      }
+      var result = await _postSubscribe(token: token, phone: phone);
+
+      // حساب واردشدهٔ بدون شماره | فالبک به دیالوگ شماره و یک تلاش دوباره.
+      if (result.needPhone) {
+        phone = await _askGuestPhone();
+        if (!mounted) return;
+        if (phone.isEmpty) return;
+        if (!RegExp(r'^09\d{9}$').hasMatch(phone)) {
+          _notice('شمارهٔ موبایل معتبر نیست | با 09 شروع میشود');
+          return;
+        }
+        result = await _postSubscribe(token: token, phone: phone);
+      }
+
+      if (!mounted) return;
+      if (result.alreadyInStock) {
+        // موجود شده | شناسه از حافظه پاک میشود تا چرخهٔ بعدی کار کند.
+        await _clearRegistered();
+        _notice(result.message);
+        return;
+      }
+      if (result.ok) {
+        await _markRegistered();
+      }
+      _notice(result.message);
+    } finally {
+      if (mounted) {
+        setState(() => _busy = false);
+      }
+    }
+  }
+
+  /// دیالوگ مهمان | خروجی = ارقام انگلیسی شماره یا رشتهٔ خالی یعنی انصراف |
+  /// کنترلر در State نگه داشته و در dispose تمیز میشود.
+  Future<String> _askGuestPhone() async {
+    final TextEditingController controller =
+        _guestPhoneController ??= TextEditingController();
+    controller.clear();
+    final String? result = await showDialog<String>(
+      context: context,
+      builder: (BuildContext dialogContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+          title: const Text(
+            'موجود شد خبرم کن',
+            style: TextStyle(
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+              color: Dk.text1,
+            ),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              const Text(
+                'شمارهٔ موبایل شما فقط برای یک پیامک اطلاع‌رسانی همین کالا استفاده میشود.',
+                style: TextStyle(fontSize: 12, color: Dk.text2, height: 1.7),
+              ),
+              const SizedBox(height: 10),
+              TextField(
+                controller: controller,
+                autofocus: true,
+                keyboardType: TextInputType.phone,
+                maxLength: 11,
+                style: const TextStyle(fontSize: 14, color: Dk.text1),
+                decoration: const InputDecoration(
+                  hintText: '09123456789',
+                  counterText: '',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+          actions: <Widget>[
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('انصراف', style: TextStyle(color: Dk.text3)),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(controller.text),
+              child: Text(
+                'ثبت',
+                style: TextStyle(
+                  color: widget.config.primaryColor,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+    return _asciiDigits((result ?? '').trim());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: double.infinity,
+      height: 40,
+      child: OutlinedButton(
+        style: OutlinedButton.styleFrom(
+          foregroundColor: Dk.text1,
+          backgroundColor: Colors.white,
+          side: const BorderSide(color: Dk.border),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+          textStyle: const TextStyle(
+            fontSize: 12.5,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        onPressed: _busy ? null : _subscribe,
+        child: _busy
+            ? const SizedBox(
+                width: 16,
+                height: 16,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Dk.text2,
+                ),
+              )
+            : Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Icon(
+                    _registered
+                        ? Icons.check_circle_outline_rounded
+                        : Icons.notifications_active_outlined,
+                    size: 16,
+                    color: _registered ? Dk.success : Dk.text2,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    _registered
+                        ? 'در لیست اطلاع‌رسانی ثبت شد ✓'
+                        : 'موجود شد خبرم کن',
+                  ),
+                ],
+              ),
       ),
     );
   }
