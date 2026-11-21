@@ -110,6 +110,10 @@ class AppConfig {
     this.sortFilterEnabled = false,
     // تنظیم ۲۴ | اشتراک‌گذاری محصول.
     this.shareProductEnabled = false,
+    // تنظیم ۲۵ | مشاوره و استعلام سریع.
+    this.quickInquiryEnabled = false,
+    this.quickInquiryWhatsapp = '',
+    this.quickInquiryTelegram = '',
     this.announcement = const AppAnnouncement(),
   });
 
@@ -177,6 +181,10 @@ class AppConfig {
   final bool sortFilterEnabled;
   // تنظیم ۲۴ | اشتراک‌گذاری محصول | آیکون در نوار بالای صفحهٔ محصول.
   final bool shareProductEnabled;
+  // تنظیم ۲۵ | مشاوره و استعلام سریع | تلفن از supportStorePhone میآید.
+  final bool quickInquiryEnabled;
+  final String quickInquiryWhatsapp;
+  final String quickInquiryTelegram;
   final AppAnnouncement announcement;
 
   /// لوگوی نهایی اسپلش | اولویت حلشده سمت وردپرس، وگرنه:
@@ -545,6 +553,9 @@ class AppConfig {
       recentlyViewedEnabled: recentlyViewedEnabled,
       searchHistoryEnabled: searchHistoryEnabled,
       shareProductEnabled: shareProductEnabled,
+      quickInquiryEnabled: quickInquiryEnabled,
+      quickInquiryWhatsapp: quickInquiryWhatsapp,
+      quickInquiryTelegram: quickInquiryTelegram,
       sortFilterEnabled: sortFilterEnabled,
       // این دو مقدار در زمان بیلد تثبیت شدهاند و هرگز از راه دور بازنویسی نمیشوند.
       splashLogoBundledUrl: pickText(
@@ -581,6 +592,10 @@ class AppConfig {
         : <dynamic, dynamic>{};
     final Map<dynamic, dynamic> paymentBlock = (decoded['payment'] is Map)
         ? (decoded['payment'] as Map).cast<dynamic, dynamic>()
+        : <dynamic, dynamic>{};
+    // تنظیم ۲۵ | بلوک مشاوره و استعلام سریع.
+    final Map<dynamic, dynamic> inquiryBlock = (decoded['quick_inquiry'] is Map)
+        ? (decoded['quick_inquiry'] as Map).cast<dynamic, dynamic>()
         : <dynamic, dynamic>{};
     final String remoteScheme = ((decoded['deep_link_scheme'] as String?) ?? '')
         .trim();
@@ -686,6 +701,16 @@ class AppConfig {
       shareProductEnabled: decoded.containsKey('share_product_enabled')
           ? decoded['share_product_enabled'] == true
           : shareProductEnabled,
+      // تنظیم ۲۵ | مشاوره و استعلام سریع | بلوک quick_inquiry در /config.
+      quickInquiryEnabled: inquiryBlock['enabled'] == null
+          ? quickInquiryEnabled
+          : inquiryBlock['enabled'] == true,
+      quickInquiryWhatsapp: inquiryBlock['whatsapp'] == null
+          ? quickInquiryWhatsapp
+          : ((inquiryBlock['whatsapp'] as String?) ?? '').trim(),
+      quickInquiryTelegram: inquiryBlock['telegram'] == null
+          ? quickInquiryTelegram
+          : ((inquiryBlock['telegram'] as String?) ?? '').trim(),
       bazaarUseLocalSignatureCheck:
           paymentBlock['use_local_signature_check'] == null
           ? bazaarUseLocalSignatureCheck

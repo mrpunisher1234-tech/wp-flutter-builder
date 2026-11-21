@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import 'cart_screen.dart';
@@ -3014,6 +3015,151 @@ Future<void> _shareProduct(
   }
 }
 
+/// تنظیم ۲۵ | کانالهای تماس پیکربندی‌شده | واتساپ/تلگرام از کارت ۲۵ و
+/// تلفن از شمارهٔ فروشگاه کارت ۱۲ | پیام واتساپ با نام و لینک محصول پر میشود.
+class _InquiryChannel {
+  const _InquiryChannel(this.label, this.icon, this.uri);
+
+  final String label;
+  final IconData icon;
+  final Uri uri;
+}
+
+List<_InquiryChannel> _quickInquiryChannels(AppConfig config, WpItem item) {
+  final List<_InquiryChannel> channels = <_InquiryChannel>[];
+  final String whatsapp = config.quickInquiryWhatsapp.trim();
+  // گارد تلگرام | اگر ادمین اشتباهی لینک یا @ گذاشته باشد تمیز میشود.
+  final String telegram = config.quickInquiryTelegram
+      .trim()
+      .replaceFirst(
+        RegExp(r'^(https?://)?(www\.)?t\.me/', caseSensitive: false),
+        '',
+      )
+      .replaceFirst('@', '')
+      .trim();
+  final String phone = config.supportStorePhone.trim();
+  final String link = item.url.isNotEmpty
+      ? item.url
+      : '${config.siteUrl.replaceFirst(RegExp(r'/+$'), '')}/?p=${item.id}';
+  if (whatsapp.isNotEmpty) {
+    channels.add(
+      _InquiryChannel(
+        'واتساپ',
+        Icons.chat_rounded,
+        Uri.parse(
+          'https://wa.me/$whatsapp?text=${Uri.encodeComponent('سلام | درباره «${item.title}» سوال داشتم\n$link')}',
+        ),
+      ),
+    );
+  }
+  if (telegram.isNotEmpty) {
+    channels.add(
+      _InquiryChannel(
+        'تلگرام',
+        Icons.send_rounded,
+        Uri.parse('https://t.me/$telegram'),
+      ),
+    );
+  }
+  if (phone.isNotEmpty) {
+    // گارد شماره | ارقام فارسی/عربی اول انگلیسی میشوند وگرنه مسیر tel:
+    // خالی میماند | فقط وقتی شمارهٔ تمیز باقی مانده باشد کانال ساخته میشود.
+    final String cleanPhone = _asciiDigits(phone)
+        .replaceAll(RegExp(r'[^0-9+]'), '');
+    if (cleanPhone.isNotEmpty) {
+      channels.add(
+        _InquiryChannel(
+          'تماس تلفنی',
+          Icons.phone_rounded,
+          Uri(scheme: 'tel', path: cleanPhone),
+        ),
+      );
+    }
+  }
+  return channels;
+}
+
+/// باز کردن کانال | تککانال = مستقیم | چندکانال = ورق انتخاب سفید RTL.
+Future<void> _openInquirySheet(
+  BuildContext context,
+  AppConfig config,
+  WpItem item,
+) async {
+  final List<_InquiryChannel> channels = _quickInquiryChannels(config, item);
+  if (channels.isEmpty) return;
+  if (channels.length == 1) {
+    await _launchInquiry(context, channels.first);
+    return;
+  }
+  await showModalBottomSheet<void>(
+    context: context,
+    backgroundColor: Colors.white,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+    ),
+    builder: (BuildContext sheetContext) => Directionality(
+      textDirection: TextDirection.rtl,
+      child: SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            const Padding(
+              padding: EdgeInsets.all(14),
+              child: Text(
+                'سوال یا مشاوره قبل از خرید',
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                  color: Dk.text1,
+                ),
+              ),
+            ),
+            for (final _InquiryChannel channel in channels)
+              ListTile(
+                leading: Icon(channel.icon, color: config.primaryColor),
+                title: Text(
+                  channel.label,
+                  style: const TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w700,
+                    color: Dk.text1,
+                  ),
+                ),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _launchInquiry(context, channel);
+                },
+              ),
+          ],
+        ),
+      ),
+    ),
+  );
+}
+
+Future<void> _launchInquiry(
+  BuildContext context,
+  _InquiryChannel channel,
+) async {
+  bool opened = false;
+  try {
+    opened = await launchUrl(channel.uri, mode: LaunchMode.externalApplication);
+  } catch (_) {
+    opened = false;
+  }
+  if (opened || !context.mounted) return;
+  ScaffoldMessenger.of(context).showSnackBar(
+    const SnackBar(
+      content: Text(
+        'باز نشد | با شمارهٔ فروشگاه تماس بگیرید',
+        style: TextStyle(color: Colors.white, fontSize: 13),
+      ),
+      backgroundColor: Colors.black,
+      behavior: SnackBarBehavior.floating,
+    ),
+  );
+}
+
 class NativeDetailScreen extends StatelessWidget {
   final WpItem item;
   final AppConfig config;
@@ -3349,6 +3495,54 @@ class NativeDetailScreen extends StatelessWidget {
                           ),
                         ),
                     ],
+
+                    // تنظیم ۲۵ | مشاوره و استعلام سریع | فقط با تیک ادمین و
+                    // حداقل یک کانال تماس پیکربندی‌شده.
+                    if (config.quickInquiryEnabled &&
+                        item.isProduct &&
+                        _quickInquiryChannels(config, item).isNotEmpty)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 14),
+                        child: InkWell(
+                          onTap: () =>
+                              _openInquirySheet(context, config, item),
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Dk.surface2,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: Dk.border),
+                            ),
+                            child: Row(
+                              children: <Widget>[
+                                Icon(
+                                  Icons.support_agent_rounded,
+                                  size: 20,
+                                  color: config.primaryColor,
+                                ),
+                                const SizedBox(width: 10),
+                                const Expanded(
+                                  child: Text(
+                                    'سوال یا مشاوره قبل از خرید؟',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                      color: Dk.text1,
+                                    ),
+                                  ),
+                                ),
+                                const Icon(
+                                  Icons.chevron_left_rounded,
+                                  size: 18,
+                                  color: Dk.text3,
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
 
                     // ویژگی‌های محصول
                     if (item.attributes.isNotEmpty) ...<Widget>[
