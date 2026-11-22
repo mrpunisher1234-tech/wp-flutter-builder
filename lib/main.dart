@@ -123,6 +123,9 @@ class AppConfig {
     // تنظیم ۲۸ | نوار پیشرفت ارسال رایگان.
     this.freeShippingBarEnabled = false,
     this.freeShippingThreshold = 0,
+    // تنظیم ۲۹ | یادآور سبد رهاشده.
+    this.cartReminderEnabled = false,
+    this.cartReminderHours = 24,
     this.announcement = const AppAnnouncement(),
   });
 
@@ -203,6 +206,9 @@ class AppConfig {
   final bool faqEnabled;
   final String shippingEtaText;
   final List<Map<String, String>> faqItems;
+  // تنظیم ۲۹ | یادآور سبد رهاشده | زمانسنج سمت خود دستگاه کاربر.
+  final bool cartReminderEnabled;
+  final int cartReminderHours;
   final AppAnnouncement announcement;
 
   /// لوگوی نهایی اسپلش | اولویت حلشده سمت وردپرس، وگرنه:
@@ -591,6 +597,8 @@ class AppConfig {
       faqEnabled: faqEnabled,
       shippingEtaText: shippingEtaText,
       faqItems: faqItems,
+      cartReminderEnabled: cartReminderEnabled,
+      cartReminderHours: cartReminderHours,
       quickInquiryEnabled: quickInquiryEnabled,
       quickInquiryWhatsapp: quickInquiryWhatsapp,
       quickInquiryTelegram: quickInquiryTelegram,
@@ -643,6 +651,11 @@ class AppConfig {
     final Map<dynamic, dynamic> freeShippingBlock =
         (decoded['free_shipping'] is Map)
             ? (decoded['free_shipping'] as Map).cast<dynamic, dynamic>()
+            : <dynamic, dynamic>{};
+    // تنظیم ۲۹ | بلوک یادآور سبد رهاشده.
+    final Map<dynamic, dynamic> cartReminderBlock =
+        (decoded['cart_reminder'] is Map)
+            ? (decoded['cart_reminder'] as Map).cast<dynamic, dynamic>()
             : <dynamic, dynamic>{};
     final String remoteScheme = ((decoded['deep_link_scheme'] as String?) ?? '')
         .trim();
@@ -744,6 +757,14 @@ class AppConfig {
       stockNotifyEnabled: decoded.containsKey('stock_notify_enabled')
           ? decoded['stock_notify_enabled'] == true
           : stockNotifyEnabled,
+      // تنظیم ۲۹ | یادآور سبد رهاشده | بلوک cart_reminder در /config.
+      cartReminderEnabled: cartReminderBlock['enabled'] == null
+          ? cartReminderEnabled
+          : cartReminderBlock['enabled'] == true,
+      cartReminderHours: cartReminderBlock['hours'] == null
+          ? cartReminderHours
+          : ((cartReminderBlock['hours'] as num?)?.toInt() ??
+              cartReminderHours),
       // تنظیم ۲۸ | بلوک free_shipping در /config.
       freeShippingBarEnabled: freeShippingBlock['enabled'] == null
           ? freeShippingBarEnabled
@@ -967,6 +988,8 @@ class _SplashGateState extends State<_SplashGate>
   bool _initialRemoteRetryScheduled = false;
   bool _announcementDialogOpen = false;
   bool _announcementCheckInProgress = false;
+  // تنظیم ۲۹ | یادآور سبد باز است | گارد دوباره‌باز شدن.
+  bool _cartReminderOpen = false;
   int _foregroundCycle = 0;
   int _lastAnnouncementCycle = -1;
   DateTime? _lastRemoteSettingsRefresh;
@@ -1008,7 +1031,7 @@ class _SplashGateState extends State<_SplashGate>
           }
         });
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          unawaited(_maybeShowAnnouncement());
+          unawaited(_maybeShowAnnouncement().whenComplete(() => _maybeShowCartReminder()));
         });
       });
 
@@ -1198,7 +1221,7 @@ class _SplashGateState extends State<_SplashGate>
             _syncLocalUiToggles();
           });
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            unawaited(_maybeShowAnnouncement());
+            unawaited(_maybeShowAnnouncement().whenComplete(() => _maybeShowCartReminder()));
           });
         }
       } else {
@@ -1281,6 +1304,136 @@ class _SplashGateState extends State<_SplashGate>
     } finally {
       _announcementDialogOpen = false;
       _announcementCheckInProgress = false;
+    }
+  }
+
+  /// تنظیم ۲۹ | یادآور سبد رهاشده | فقط بعد از اعلان کارت ۱۶ و هیچ‌وقت
+  /// هم‌زمان با آن یا جریان پرداخت | زمانسنج روی خود دستگاه کاربر |
+  /// فقط روی روت فعلی و هرگز دوباره هم‌زمان.
+  Future<void> _maybeShowCartReminder() async {
+    final AppConfig config = _current;
+    if (!config.cartReminderEnabled) {
+      return;
+    }
+    if (!_splashGone || _cartReminderOpen) {
+      return;
+    }
+    if (_announcementDialogOpen ||
+        _announcementCheckInProgress ||
+        _paymentLinksInFlight.isNotEmpty ||
+        BankPayments.instance.checkoutBusy) {
+      return;
+    }
+    if (!mounted) {
+      return;
+    }
+    final ModalRoute<dynamic>? currentRoute = ModalRoute.of(context);
+    if (currentRoute == null || !currentRoute.isCurrent) {
+      return; // روی سبد/چک‌اوت/جزئیات | یادآور باز نمیشود.
+    }
+    final CartManager cart = CartManager.instance;
+    await cart.ready;
+    if (!mounted) {
+      return;
+    }
+    final int? updatedAt = cart.lastUpdatedAt;
+    if (updatedAt == null) {
+      return; // سبد خالی
+    }
+    final int hours = config.cartReminderHours.clamp(1, 168);
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    if (now - updatedAt < hours * 3600000) {
+      return;
+    }
+    final int? remindedAt = cart.lastRemindedAt;
+    if (remindedAt != null && now - remindedAt < hours * 3600000) {
+      return; // هر چرخه فقط یک بار
+    }
+    cart.recordCartReminder();
+    if (!mounted) {
+      return;
+    }
+    _cartReminderOpen = true;
+    final int itemCount = cart.totalCount;
+    final int subtotal = cart.totalPrice;
+    try {
+      await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (BuildContext sheetContext) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                const Text(
+                  'سبد خریدتان منتظر شماست',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w800,
+                    color: Dk.text1,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  '${toPersianDigits('$itemCount')} کالا در سبد | جمع: ${formatToman('$subtotal')}',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(fontSize: 12.5, color: Dk.text2),
+                ),
+                const SizedBox(height: 14),
+                FilledButton(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: config.primaryColor,
+                    foregroundColor: Colors.white,
+                    minimumSize: const Size.fromHeight(46),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    textStyle: const TextStyle(
+                      fontSize: 13.5,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  onPressed: () {
+                    Navigator.of(sheetContext).pop();
+                    Navigator.of(context).push<void>(
+                      MaterialPageRoute<void>(
+                        builder: (_) => CartView(
+                          config: config,
+                          onGoToShop: () => Navigator.of(context).popUntil(
+                            (Route<dynamic> route) => route.isFirst,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                  child: const Text('تکمیل خرید'),
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton(
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: Dk.text3,
+                    side: const BorderSide(color: Dk.border),
+                    minimumSize: const Size.fromHeight(42),
+                  ),
+                  onPressed: () => Navigator.of(sheetContext).pop(),
+                  child: const Text('بعداً'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+      );
+    } finally {
+      _cartReminderOpen = false;
     }
   }
 

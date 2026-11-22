@@ -48,6 +48,14 @@ class CartManager extends ChangeNotifier {
   final List<CartItem> _items = <CartItem>[];
   List<CartItem> get items => List<CartItem>.unmodifiable(_items);
 
+  // تنظیم ۲۹ | زمانسنج یادآور سبد رهاشده | اپوک میلیثانیه در prefs.
+  static const String _updatedAtKey = 'wptf_cart_updated_at';
+  static const String _remindedAtKey = 'wptf_cart_reminded_at';
+  int? _lastUpdatedAt;
+  int? _lastRemindedAt;
+  int? get lastUpdatedAt => _lastUpdatedAt;
+  int? get lastRemindedAt => _lastRemindedAt;
+
   int get totalCount =>
       _items.fold(0, (int sum, CartItem i) => sum + i.quantity);
 
@@ -95,8 +103,34 @@ class CartManager extends ChangeNotifier {
   void _changeCart(VoidCallback mutation) {
     if (!_restored) _pendingMutations.add(mutation);
     mutation();
+    // تنظیم ۲۹ | هر تغییر، زمانسنج سبد را بهروز میکند | سبد خالی = صفر
+    // و یادآوریِ چرخهٔ قبلی هم ریست میشود تا چرخهٔ تازه تمیز شروع کند.
+    if (_items.isEmpty) {
+      _lastUpdatedAt = null;
+      _lastRemindedAt = null;
+    } else {
+      _lastUpdatedAt = DateTime.now().millisecondsSinceEpoch;
+    }
     _saveToPrefs();
     notifyListeners();
+  }
+
+  /// تنظیم ۲۹ | ثبت زمان آخرین یادآوری | هر چرخه فقط یک بار | بدون notify.
+  void recordCartReminder() {
+    _lastRemindedAt = DateTime.now().millisecondsSinceEpoch;
+    _persistRemindedAt();
+  }
+
+  Future<void> _persistRemindedAt() async {
+    try {
+      await _restoreFuture;
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      if (_lastRemindedAt == null) {
+        await prefs.remove(_remindedAtKey);
+      } else {
+        await prefs.setInt(_remindedAtKey, _lastRemindedAt!);
+      }
+    } catch (_) {}
   }
 
   // --- ذخیره و بازیابی دائمی ---
@@ -129,6 +163,17 @@ class CartManager extends ChangeNotifier {
               })
           .toList();
       await prefs.setString(_storageKey, jsonEncode(rawList));
+      // تنظیم ۲۹ | زمانسنجهای یادآور.
+      if (_lastUpdatedAt == null) {
+        await prefs.remove(_updatedAtKey);
+      } else {
+        await prefs.setInt(_updatedAtKey, _lastUpdatedAt!);
+      }
+      if (_lastRemindedAt == null) {
+        await prefs.remove(_remindedAtKey);
+      } else {
+        await prefs.setInt(_remindedAtKey, _lastRemindedAt!);
+      }
     } catch (_) {
       // خطای ذخیره | سبد حافظه‌ای سر جایش می‌ماند
     }
@@ -138,6 +183,8 @@ class CartManager extends ChangeNotifier {
     final List<CartItem> restored = <CartItem>[];
     try {
       final SharedPreferences prefs = await SharedPreferences.getInstance();
+      _lastUpdatedAt = prefs.getInt(_updatedAtKey);
+      _lastRemindedAt = prefs.getInt(_remindedAtKey);
       final String? jsonString = prefs.getString(_storageKey);
       if (jsonString == null || jsonString.isEmpty) return;
       final dynamic decodedCart = jsonDecode(jsonString);
