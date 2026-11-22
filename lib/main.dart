@@ -116,6 +116,10 @@ class AppConfig {
     this.quickInquiryTelegram = '',
     // تنظیم ۲۶ | موجود شد خبرم کن.
     this.stockNotifyEnabled = false,
+    // تنظیم ۲۷ | پرسش‌های متداول و زمان ارسال.
+    this.faqEnabled = false,
+    this.shippingEtaText = '',
+    this.faqItems = const <Map<String, String>>[],
     this.announcement = const AppAnnouncement(),
   });
 
@@ -189,6 +193,10 @@ class AppConfig {
   final bool quickInquiryEnabled;
   final String quickInquiryWhatsapp;
   final String quickInquiryTelegram;
+  // تنظیم ۲۷ | پرسش‌های متداول و زمان ارسال | نوار سبد + آکاردئون پشتیبانی.
+  final bool faqEnabled;
+  final String shippingEtaText;
+  final List<Map<String, String>> faqItems;
   final AppAnnouncement announcement;
 
   /// لوگوی نهایی اسپلش | اولویت حلشده سمت وردپرس، وگرنه:
@@ -325,6 +333,20 @@ class AppConfig {
         .map((dynamic term) => ((term as String?) ?? '').trim())
         .where((String term) => term.isNotEmpty)
         .take(4)
+        .toList(growable: false);
+  }
+
+  /// تنظیم ۲۷ | آیتمهای FAQ | هر آیتم {question, answer} | حداکثر ۱۲.
+  static List<Map<String, String>> parseFaqItems(dynamic raw) {
+    if (raw is! List) return const <Map<String, String>>[];
+    return raw
+        .whereType<Map>()
+        .map((Map row) => <String, String>{
+              'question': ((row['question'] as String?) ?? '').trim(),
+              'answer': ((row['answer'] as String?) ?? '').trim(),
+            })
+        .where((Map<String, String> row) => row['question']!.isNotEmpty)
+        .take(12)
         .toList(growable: false);
   }
 
@@ -558,6 +580,9 @@ class AppConfig {
       searchHistoryEnabled: searchHistoryEnabled,
       shareProductEnabled: shareProductEnabled,
       stockNotifyEnabled: stockNotifyEnabled,
+      faqEnabled: faqEnabled,
+      shippingEtaText: shippingEtaText,
+      faqItems: faqItems,
       quickInquiryEnabled: quickInquiryEnabled,
       quickInquiryWhatsapp: quickInquiryWhatsapp,
       quickInquiryTelegram: quickInquiryTelegram,
@@ -601,6 +626,10 @@ class AppConfig {
     // تنظیم ۲۵ | بلوک مشاوره و استعلام سریع.
     final Map<dynamic, dynamic> inquiryBlock = (decoded['quick_inquiry'] is Map)
         ? (decoded['quick_inquiry'] as Map).cast<dynamic, dynamic>()
+        : <dynamic, dynamic>{};
+    // تنظیم ۲۷ | بلوک پرسش‌های متداول و زمان ارسال.
+    final Map<dynamic, dynamic> faqBlock = (decoded['faq'] is Map)
+        ? (decoded['faq'] as Map).cast<dynamic, dynamic>()
         : <dynamic, dynamic>{};
     final String remoteScheme = ((decoded['deep_link_scheme'] as String?) ?? '')
         .trim();
@@ -702,6 +731,16 @@ class AppConfig {
       stockNotifyEnabled: decoded.containsKey('stock_notify_enabled')
           ? decoded['stock_notify_enabled'] == true
           : stockNotifyEnabled,
+      // تنظیم ۲۷ | پرسش‌های متداول و زمان ارسال | بلوک faq در /config.
+      faqEnabled: faqBlock['enabled'] == null
+          ? faqEnabled
+          : faqBlock['enabled'] == true,
+      shippingEtaText: faqBlock['shipping_eta'] == null
+          ? shippingEtaText
+          : ((faqBlock['shipping_eta'] as String?) ?? '').trim(),
+      faqItems: faqBlock['items'] == null
+          ? faqItems
+          : AppConfig.parseFaqItems(faqBlock['items']),
       // تنظیم ۲۳ | مرتب‌سازی و فیلتر موجودی | کلید در سطح ریشهٔ /config.
       sortFilterEnabled: decoded.containsKey('sort_filter_enabled')
           ? decoded['sort_filter_enabled'] == true

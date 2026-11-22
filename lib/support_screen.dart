@@ -166,6 +166,104 @@ class _SupportScreenState extends State<SupportScreen> {
                 config: widget.config,
                 onCopyPhone: _contactStore,
               ),
+            // تنظیم ۲۷ | نوار زمان ارسال + پرسش‌های متداول.
+            if (widget.config.faqEnabled &&
+                widget.config.shippingEtaText.isNotEmpty)
+              Container(
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Dk.border),
+                ),
+                child: Row(
+                  children: <Widget>[
+                    Icon(
+                      Icons.local_shipping_outlined,
+                      size: 18,
+                      color: widget.config.primaryColor,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        widget.config.shippingEtaText,
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          color: Dk.text1,
+                          height: 1.6,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            if (widget.config.faqEnabled &&
+                widget.config.faqItems.isNotEmpty) ...<Widget>[
+              const Text(
+                'پرسش‌های متداول',
+                style: TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w800,
+                  color: Dk.text1,
+                ),
+              ),
+              const SizedBox(height: 8),
+              for (final Map<String, String> item in widget.config.faqItems)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Theme(
+                    data: Theme.of(context).copyWith(
+                      dividerColor: Colors.transparent,
+                    ),
+                    child: ExpansionTile(
+                      tilePadding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                      ),
+                      childrenPadding: const EdgeInsets.fromLTRB(
+                        12,
+                        0,
+                        12,
+                        10,
+                      ),
+                      collapsedBackgroundColor: Colors.white,
+                      backgroundColor: Colors.white,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        side: const BorderSide(color: Dk.border),
+                      ),
+                      collapsedShape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                        side: const BorderSide(color: Dk.border),
+                      ),
+                      iconColor: Dk.text2,
+                      collapsedIconColor: Dk.text2,
+                      title: Text(
+                        item['question'] ?? '',
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                          color: Dk.text1,
+                        ),
+                      ),
+                      children: <Widget>[
+                        Align(
+                          alignment: AlignmentDirectional.centerStart,
+                          child: Text(
+                            item['answer'] ?? '',
+                            style: const TextStyle(
+                              fontSize: 12.5,
+                              color: Dk.text2,
+                              height: 1.8,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 10),
+            ],
             if (_sent) ...<Widget>[
               Container(
                 padding: const EdgeInsets.all(16),

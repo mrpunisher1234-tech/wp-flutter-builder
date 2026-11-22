@@ -359,6 +359,41 @@ class _CartViewState extends State<CartView> {
                   )),
               const SizedBox(height: 10),
               _InvoiceCard(cart: cart),
+              // تنظیم ۲۷ | نوار ظریف زمان ارسال | فقط با تیک ادمین و متن پر.
+              if (widget.config.faqEnabled &&
+                  widget.config.shippingEtaText.isNotEmpty)
+                Container(
+                  margin: const EdgeInsets.only(top: 10),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 10,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Dk.border),
+                  ),
+                  child: Row(
+                    children: <Widget>[
+                      Icon(
+                        Icons.local_shipping_outlined,
+                        size: 16,
+                        color: widget.config.primaryColor,
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          widget.config.shippingEtaText,
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Dk.text2,
+                            height: 1.6,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
             ],
           ),
         ),
