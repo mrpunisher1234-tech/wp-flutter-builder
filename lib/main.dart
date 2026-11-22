@@ -126,6 +126,10 @@ class AppConfig {
     // تنظیم ۲۹ | یادآور سبد رهاشده.
     this.cartReminderEnabled = false,
     this.cartReminderHours = 24,
+    // تنظیم ۳۰ | بنر کد تخفیف ویژه.
+    this.promoBannerEnabled = false,
+    this.promoBannerText = '',
+    this.promoCouponCode = '',
     this.announcement = const AppAnnouncement(),
   });
 
@@ -209,6 +213,10 @@ class AppConfig {
   // تنظیم ۲۹ | یادآور سبد رهاشده | زمانسنج سمت خود دستگاه کاربر.
   final bool cartReminderEnabled;
   final int cartReminderHours;
+  // تنظیم ۳۰ | بنر کد تخفیف ویژه | کپی با یک لمس در سبد.
+  final bool promoBannerEnabled;
+  final String promoBannerText;
+  final String promoCouponCode;
   final AppAnnouncement announcement;
 
   /// لوگوی نهایی اسپلش | اولویت حلشده سمت وردپرس، وگرنه:
@@ -599,6 +607,9 @@ class AppConfig {
       faqItems: faqItems,
       cartReminderEnabled: cartReminderEnabled,
       cartReminderHours: cartReminderHours,
+      promoBannerEnabled: promoBannerEnabled,
+      promoBannerText: promoBannerText,
+      promoCouponCode: promoCouponCode,
       quickInquiryEnabled: quickInquiryEnabled,
       quickInquiryWhatsapp: quickInquiryWhatsapp,
       quickInquiryTelegram: quickInquiryTelegram,
@@ -656,6 +667,11 @@ class AppConfig {
     final Map<dynamic, dynamic> cartReminderBlock =
         (decoded['cart_reminder'] is Map)
             ? (decoded['cart_reminder'] as Map).cast<dynamic, dynamic>()
+            : <dynamic, dynamic>{};
+    // تنظیم ۳۰ | بلوک بنر کد تخفیف ویژه.
+    final Map<dynamic, dynamic> promoCouponBlock =
+        (decoded['promo_coupon'] is Map)
+            ? (decoded['promo_coupon'] as Map).cast<dynamic, dynamic>()
             : <dynamic, dynamic>{};
     final String remoteScheme = ((decoded['deep_link_scheme'] as String?) ?? '')
         .trim();
@@ -765,6 +781,16 @@ class AppConfig {
           ? cartReminderHours
           : ((cartReminderBlock['hours'] as num?)?.toInt() ??
               cartReminderHours),
+      // تنظیم ۳۰ | بنر کد تخفیف ویژه | بلوک promo_coupon در /config.
+      promoBannerEnabled: promoCouponBlock['enabled'] == null
+          ? promoBannerEnabled
+          : promoCouponBlock['enabled'] == true,
+      promoBannerText: promoCouponBlock['text'] == null
+          ? promoBannerText
+          : ((promoCouponBlock['text'] as String?) ?? '').trim(),
+      promoCouponCode: promoCouponBlock['code'] == null
+          ? promoCouponCode
+          : ((promoCouponBlock['code'] as String?) ?? '').trim(),
       // تنظیم ۲۸ | بلوک free_shipping در /config.
       freeShippingBarEnabled: freeShippingBlock['enabled'] == null
           ? freeShippingBarEnabled

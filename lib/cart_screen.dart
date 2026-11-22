@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'checkout_screen.dart';
@@ -405,6 +406,12 @@ class _CartViewState extends State<CartView> {
                     primaryColor: widget.config.primaryColor,
                   )),
               const SizedBox(height: 10),
+              // تنظیم ۳۰ | بنر کد تخفیف ویژه | کپی با یک لمس.
+              if (widget.config.promoBannerEnabled &&
+                  cart.items.isNotEmpty &&
+                  (widget.config.promoBannerText.isNotEmpty ||
+                      widget.config.promoCouponCode.isNotEmpty))
+                _PromoCouponStrip(config: widget.config),
               // تنظیم ۲۸ | نوار پیشرفت ارسال رایگان | آستانه از ادمین.
               if (widget.config.freeShippingBarEnabled &&
                   widget.config.freeShippingThreshold > 0 &&
@@ -533,6 +540,104 @@ class _FreeShippingBar extends StatelessWidget {
               ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// تنظیم ۳۰ | بنر کد تخفیف ویژه | لمس دکمه = کپی کد در کلیپ‌بورد | کد باید
+/// در ووکامرس به‌صورت کوپن فعال موجود باشد تا در تسویه‌حساب قبول شود.
+class _PromoCouponStrip extends StatelessWidget {
+  const _PromoCouponStrip({required this.config});
+
+  final AppConfig config;
+
+  @override
+  Widget build(BuildContext context) {
+    final String code = config.promoCouponCode.trim();
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: config.primaryColor.withValues(alpha: 0.35),
+        ),
+      ),
+      child: Row(
+        children: <Widget>[
+          Icon(
+            Icons.confirmation_number_outlined,
+            size: 20,
+            color: config.primaryColor,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                if (config.promoBannerText.isNotEmpty)
+                  Text(
+                    config.promoBannerText,
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      color: Dk.text1,
+                    ),
+                  ),
+                if (code.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 2),
+                    child: Text(
+                      'کد: $code',
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        color: Dk.text3,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          if (code.isNotEmpty)
+            InkWell(
+              onTap: () async {
+                await Clipboard.setData(ClipboardData(text: code));
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'کد تخفیف کپی شد | در صفحهٔ تسویه‌حساب وارد کنید',
+                        style: TextStyle(color: Colors.white, fontSize: 13),
+                      ),
+                      backgroundColor: Colors.black,
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                }
+              },
+              borderRadius: BorderRadius.circular(999),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 7,
+                ),
+                decoration: BoxDecoration(
+                  color: config.primaryColor,
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: const Text(
+                  'کپی کد',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w800,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );
