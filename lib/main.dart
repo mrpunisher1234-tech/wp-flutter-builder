@@ -120,6 +120,9 @@ class AppConfig {
     this.faqEnabled = false,
     this.shippingEtaText = '',
     this.faqItems = const <Map<String, String>>[],
+    // تنظیم ۲۸ | نوار پیشرفت ارسال رایگان.
+    this.freeShippingBarEnabled = false,
+    this.freeShippingThreshold = 0,
     this.announcement = const AppAnnouncement(),
   });
 
@@ -187,6 +190,9 @@ class AppConfig {
   final bool sortFilterEnabled;
   // تنظیم ۲۶ | موجود شد خبرم کن | دکمه روی کالاهای ناموجود.
   final bool stockNotifyEnabled;
+  // تنظیم ۲۸ | نوار پیشرفت ارسال رایگان | آستانهٔ تومانی از ادمین.
+  final bool freeShippingBarEnabled;
+  final int freeShippingThreshold;
   // تنظیم ۲۴ | اشتراک‌گذاری محصول | آیکون در نوار بالای صفحهٔ محصول.
   final bool shareProductEnabled;
   // تنظیم ۲۵ | مشاوره و استعلام سریع | تلفن از supportStorePhone میآید.
@@ -580,6 +586,8 @@ class AppConfig {
       searchHistoryEnabled: searchHistoryEnabled,
       shareProductEnabled: shareProductEnabled,
       stockNotifyEnabled: stockNotifyEnabled,
+      freeShippingBarEnabled: freeShippingBarEnabled,
+      freeShippingThreshold: freeShippingThreshold,
       faqEnabled: faqEnabled,
       shippingEtaText: shippingEtaText,
       faqItems: faqItems,
@@ -631,6 +639,11 @@ class AppConfig {
     final Map<dynamic, dynamic> faqBlock = (decoded['faq'] is Map)
         ? (decoded['faq'] as Map).cast<dynamic, dynamic>()
         : <dynamic, dynamic>{};
+    // تنظیم ۲۸ | بلوک نوار پیشرفت ارسال رایگان.
+    final Map<dynamic, dynamic> freeShippingBlock =
+        (decoded['free_shipping'] is Map)
+            ? (decoded['free_shipping'] as Map).cast<dynamic, dynamic>()
+            : <dynamic, dynamic>{};
     final String remoteScheme = ((decoded['deep_link_scheme'] as String?) ?? '')
         .trim();
 
@@ -731,6 +744,15 @@ class AppConfig {
       stockNotifyEnabled: decoded.containsKey('stock_notify_enabled')
           ? decoded['stock_notify_enabled'] == true
           : stockNotifyEnabled,
+      // تنظیم ۲۸ | بلوک free_shipping در /config.
+      freeShippingBarEnabled: freeShippingBlock['enabled'] == null
+          ? freeShippingBarEnabled
+          : freeShippingBlock['enabled'] == true,
+      freeShippingThreshold: freeShippingBlock['threshold'] == null
+          ? freeShippingThreshold
+          : ((freeShippingBlock['threshold'] as num?)?.toInt() ??
+              freeShippingThreshold),
+      // تنظیم ۲۳ | مرتب‌سازی و فیلتر موجودی | کلید در سطح ریشهٔ /config.
       // تنظیم ۲۷ | پرسش‌های متداول و زمان ارسال | بلوک faq در /config.
       faqEnabled: faqBlock['enabled'] == null
           ? faqEnabled

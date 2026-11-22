@@ -358,6 +358,15 @@ class _CartViewState extends State<CartView> {
                     primaryColor: widget.config.primaryColor,
                   )),
               const SizedBox(height: 10),
+              // تنظیم ۲۸ | نوار پیشرفت ارسال رایگان | آستانه از ادمین.
+              if (widget.config.freeShippingBarEnabled &&
+                  widget.config.freeShippingThreshold > 0 &&
+                  cart.items.isNotEmpty)
+                _FreeShippingBar(
+                  subtotal: cart.totalPrice,
+                  threshold: widget.config.freeShippingThreshold,
+                  primaryColor: widget.config.primaryColor,
+                ),
               _InvoiceCard(cart: cart),
               // تنظیم ۲۷ | نوار ظریف زمان ارسال | فقط با تیک ادمین و متن پر.
               if (widget.config.faqEnabled &&
@@ -406,6 +415,79 @@ class _CartViewState extends State<CartView> {
           onCheckout: _proceedToCheckout,
         ),
       ],
+    );
+  }
+}
+
+/// تنظیم ۲۸ | نوار پیشرفت ارسال رایگان | آستانه باید با تنظیم حملونقل
+/// رایگان ووکامرس یکی باشد تا موقع تسویهحساب همخوان بماند | صفر = خاموش.
+class _FreeShippingBar extends StatelessWidget {
+  const _FreeShippingBar({
+    required this.subtotal,
+    required this.threshold,
+    required this.primaryColor,
+  });
+
+  final int subtotal;
+  final int threshold;
+  final Color primaryColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final int remaining = threshold - subtotal;
+    final bool free = remaining <= 0;
+    final double progress = threshold <= 0
+        ? 0
+        : (subtotal / threshold).clamp(0.0, 1.0);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Dk.card,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Dk.border),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Icon(
+                free
+                    ? Icons.check_circle_rounded
+                    : Icons.local_shipping_outlined,
+                size: 16,
+                color: free ? Dk.success : primaryColor,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  free
+                      ? 'تبریک! سفارش شما مشمول ارسال رایگان شد 🎉'
+                      : 'فقط ${formatToman('$remaining')} دیگر خرید کنید تا ارسال رایگان شود',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                    color: free ? Dk.success : Dk.text1,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: free ? 1.0 : progress,
+              minHeight: 8,
+              backgroundColor: Dk.surface2,
+              valueColor: AlwaysStoppedAnimation<Color>(
+                free ? Dk.success : primaryColor,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
