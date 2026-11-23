@@ -1,4 +1,5 @@
 name: WP to Flutter Cloud Build Engine
+run-name: ${{ github.event.client_payload.build.claim_key && format('WPTF Build / {0}', github.event.client_payload.build.claim_key) || github.event.client_payload.claim_key && format('WPTF Build / {0}', github.event.client_payload.claim_key) || 'WP to Flutter Cloud Build Engine' }}
 
 on:
   repository_dispatch:
@@ -106,34 +107,31 @@ jobs:
     name: Compile & Publish
     runs-on: ubuntu-latest
     env:
-      APP_NAME: ${{ github.event.client_payload.app_name || github.event.inputs.app_name || 'Demo App' }}
-      SITE_URL: ${{ github.event.client_payload.site_url || github.event.inputs.site_url || 'https://example.com' }}
-      PRIMARY_COLOR: ${{ github.event.client_payload.primary_color || github.event.inputs.primary_color || '#2271b1' }}
-      BUILD_FORMAT: ${{ github.event.client_payload.build_format || github.event.inputs.build_format || 'both' }}
-      RENDER_MODE: ${{ github.event.client_payload.render_mode || github.event.inputs.render_mode || 'webview' }}
-      API_BASE_URL: ${{ github.event.client_payload.api_base_url || github.event.inputs.api_base_url || '' }}
-      APP_ICON_URL: ${{ github.event.client_payload.app_icon_url || github.event.inputs.app_icon_url || '' }}
-      LAUNCHER_ICON_URL: ${{ github.event.client_payload.launcher_icon_url || github.event.inputs.launcher_icon_url || github.event.client_payload.app_icon_url || github.event.inputs.app_icon_url || '' }}
-      KEYSTORE_B64: ${{ github.event.client_payload.keystore_b64 || github.event.inputs.keystore_b64 || '' }}
-      KEYSTORE_PASS: ${{ github.event.client_payload.keystore_pass || github.event.inputs.keystore_pass || '' }}
-      KEY_ALIAS: ${{ github.event.client_payload.key_alias || github.event.inputs.key_alias || 'wptf_release' }}
-      PACKAGE_NAME: ${{ github.event.client_payload.package_name || github.event.inputs.package_name || '' }}
-      # false از client_payload نباید به 'true' تبدیل شود | مقایسه با null کافی نیست
-      # چون true && false میشود false و از || 'true' رد میشود؛ پس false واقعی
-      # با ternary مستقیم به 'false' تبدیل میشود.
-      SPLASH_SHOW_LOGO: "${{ github.event.client_payload.splash_show_logo == false ? 'false' : (github.event.client_payload.splash_show_logo || github.event.inputs.splash_show_logo || 'true') }}"
-      SPLASH_IMAGE_URL: ${{ github.event.client_payload.splash_image_url || github.event.inputs.splash_image_url || '' }}
-      SPLASH_SITE_ICON: ${{ github.event.client_payload.splash_site_icon || github.event.inputs.splash_site_icon || '' }}
-      SPLASH_LOGO_URL: ${{ github.event.client_payload.splash_logo_url || github.event.inputs.splash_logo_url || github.event.client_payload.splash_image_url || github.event.inputs.splash_image_url || github.event.client_payload.splash_site_icon || github.event.inputs.splash_site_icon || '' }}
-      SPLASH_SITE_NAME: ${{ github.event.client_payload.splash_site_name || github.event.inputs.splash_site_name || '' }}
-      SPLASH_BG_COLOR: ${{ github.event.client_payload.splash_bg_color || github.event.inputs.splash_bg_color || '' }}
-      SPLASH_TEXT: ${{ github.event.client_payload.splash_text || github.event.inputs.splash_text || '' }}
-      SPLASH_TEXT_COLOR: ${{ github.event.client_payload.splash_text_color || github.event.inputs.splash_text_color || '#ffffff' }}
-      SEARCH_SUGGESTIONS: ${{ github.event.client_payload.search_suggestions || github.event.inputs.search_suggestions || '[]' }}
+      APP_NAME: ${{ github.event.client_payload.build.app_name || github.event.client_payload.app_name || github.event.inputs.app_name || 'Demo App' }}
+      SITE_URL: ${{ github.event.client_payload.build.site_url || github.event.client_payload.site_url || github.event.inputs.site_url || 'https://example.com' }}
+      PRIMARY_COLOR: ${{ github.event.client_payload.build.primary_color || github.event.client_payload.primary_color || github.event.inputs.primary_color || '#2271b1' }}
+      BUILD_FORMAT: ${{ github.event.client_payload.build.build_format || github.event.client_payload.build_format || github.event.inputs.build_format || 'both' }}
+      RENDER_MODE: ${{ github.event.client_payload.build.render_mode || github.event.client_payload.render_mode || github.event.inputs.render_mode || 'webview' }}
+      API_BASE_URL: ${{ github.event.client_payload.build.api_base_url || github.event.client_payload.api_base_url || github.event.inputs.api_base_url || '' }}
+      APP_ICON_URL: ${{ github.event.client_payload.build.app_icon_url || github.event.client_payload.app_icon_url || github.event.inputs.app_icon_url || '' }}
+      LAUNCHER_ICON_URL: ${{ github.event.client_payload.build.launcher_icon_url || github.event.client_payload.launcher_icon_url || github.event.inputs.launcher_icon_url || github.event.client_payload.build.app_icon_url || github.event.client_payload.app_icon_url || github.event.inputs.app_icon_url || '' }}
+      KEYSTORE_B64: ${{ github.event.client_payload.build.keystore_b64 || github.event.client_payload.keystore_b64 || github.event.inputs.keystore_b64 || '' }}
+      KEYSTORE_PASS: ${{ github.event.client_payload.build.keystore_pass || github.event.client_payload.keystore_pass || github.event.inputs.keystore_pass || '' }}
+      KEY_ALIAS: ${{ github.event.client_payload.build.key_alias || github.event.client_payload.key_alias || github.event.inputs.key_alias || 'wptf_release' }}
+      PACKAGE_NAME: ${{ github.event.client_payload.build.package_name || github.event.client_payload.package_name || github.event.inputs.package_name || '' }}
+      SPLASH_SHOW_LOGO: ${{ contains(toJSON(github.event.client_payload.build), '"splash_show_logo"') && format('{0}', github.event.client_payload.build.splash_show_logo) || contains(toJSON(github.event.client_payload), '"splash_show_logo"') && format('{0}', github.event.client_payload.splash_show_logo) || github.event.inputs.splash_show_logo || 'true' }}
+      SPLASH_IMAGE_URL: ${{ github.event.client_payload.build.splash_image_url || github.event.client_payload.splash_image_url || github.event.inputs.splash_image_url || '' }}
+      SPLASH_SITE_ICON: ${{ github.event.client_payload.build.splash_site_icon || github.event.client_payload.splash_site_icon || github.event.inputs.splash_site_icon || '' }}
+      SPLASH_LOGO_URL: ${{ github.event.client_payload.build.splash_logo_url || github.event.client_payload.splash_logo_url || github.event.inputs.splash_logo_url || github.event.client_payload.build.splash_image_url || github.event.client_payload.splash_image_url || github.event.inputs.splash_image_url || github.event.client_payload.build.splash_site_icon || github.event.client_payload.splash_site_icon || github.event.inputs.splash_site_icon || '' }}
+      SPLASH_SITE_NAME: ${{ github.event.client_payload.build.splash_site_name || github.event.client_payload.splash_site_name || github.event.inputs.splash_site_name || '' }}
+      SPLASH_BG_COLOR: ${{ github.event.client_payload.build.splash_bg_color || github.event.client_payload.splash_bg_color || github.event.inputs.splash_bg_color || '' }}
+      SPLASH_TEXT: ${{ github.event.client_payload.build.splash_text || github.event.client_payload.splash_text || github.event.inputs.splash_text || '' }}
+      SPLASH_TEXT_COLOR: ${{ github.event.client_payload.build.splash_text_color || github.event.client_payload.splash_text_color || github.event.inputs.splash_text_color || '#ffffff' }}
+      SEARCH_SUGGESTIONS: ${{ github.event.client_payload.build.search_suggestions || github.event.client_payload.search_suggestions || github.event.inputs.search_suggestions || '[]' }}
     steps:
       - name: 'Security Guard: Verify Build License'
         env:
-          LICENSE_KEY: ${{ github.event.client_payload.license_key || github.event.inputs.license_key }}
+          LICENSE_KEY: ${{ github.event.client_payload.build.license_key || github.event.client_payload.license_key || github.event.inputs.license_key }}
         run: |
           echo "Verifying build license..."
           if [ -z "$LICENSE_KEY" ]; then

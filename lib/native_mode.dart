@@ -248,10 +248,7 @@ class SaleAnnouncementCard extends StatelessWidget {
                           FittedBox(
                             fit: BoxFit.scaleDown,
                             alignment: AlignmentDirectional.centerStart,
-                            child: _PriceLine(
-                              amount: sale,
-                              currency: currency,
-                            ),
+                            child: _PriceLine(amount: sale, currency: currency),
                           ),
                           if (regular.isNotEmpty ||
                               savings != null) ...<Widget>[
@@ -265,15 +262,15 @@ class SaleAnnouncementCard extends StatelessWidget {
                                   if (regular.isNotEmpty) _Struck(regular),
                                   if (regular.isNotEmpty && savings != null)
                                     const SizedBox(width: 10),
-                                    if (savings != null)
-                                      Text(
-                                        '$savings $currency سود شما',
-                                        style: const TextStyle(
-                                          color: _lac,
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w700,
-                                        ),
+                                  if (savings != null)
+                                    Text(
+                                      '$savings $currency سود شما',
+                                      style: const TextStyle(
+                                        color: _lac,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
                                       ),
+                                    ),
                                 ],
                               ),
                             ),
@@ -2282,11 +2279,11 @@ class ProductGridCard extends StatelessWidget {
                         if (!FavoritesManager.instance.uiEnabled) {
                           return const SizedBox.shrink();
                         }
-                        final bool saved =
-                            FavoritesManager.instance.isFavorite(item.id);
+                        final bool saved = FavoritesManager.instance.isFavorite(
+                          item.id,
+                        );
                         return InkWell(
-                          onTap: () =>
-                              FavoritesManager.instance.toggle(item),
+                          onTap: () => FavoritesManager.instance.toggle(item),
                           borderRadius: BorderRadius.circular(999),
                           child: Container(
                             width: 32,
@@ -2662,21 +2659,20 @@ class _NativeSearchScreenState extends State<NativeSearchScreen> {
   }) async {
     try {
       // queryParameters کدگذاری درست فارسی/فاصله را هم تضمین می‌کند.
-      final Uri uri = Uri.parse('${widget.config.effectiveApiBaseUrl}posts')
-          .replace(
-            queryParameters: <String, String>{
-              'per_page': '$_searchPageSize',
-              'search': query,
-              'page': '$page',
-              // تنظیم ۲۳ | با تیک مرتب‌سازی، نتایج جستجو فقط محصول برمیگردند
-              // تا sort/in_stock سمت سرور معنا پیدا کنند | تیک خاموش = مثل قبل.
-              if (widget.config.sortFilterEnabled) 'type': 'product',
-              if (widget.config.sortFilterEnabled && _sort != 'newest')
-                'sort': _sort,
-              if (widget.config.sortFilterEnabled && _inStockOnly)
-                'in_stock': '1',
-            },
-          );
+      final Uri
+      uri = Uri.parse('${widget.config.effectiveApiBaseUrl}posts').replace(
+        queryParameters: <String, String>{
+          'per_page': '$_searchPageSize',
+          'search': query,
+          'page': '$page',
+          // تنظیم ۲۳ | با تیک مرتب‌سازی، نتایج جستجو فقط محصول برمیگردند
+          // تا sort/in_stock سمت سرور معنا پیدا کنند | تیک خاموش = مثل قبل.
+          if (widget.config.sortFilterEnabled) 'type': 'product',
+          if (widget.config.sortFilterEnabled && _sort != 'newest')
+            'sort': _sort,
+          if (widget.config.sortFilterEnabled && _inStockOnly) 'in_stock': '1',
+        },
+      );
       final ApiPage response = await fetchApiPage(uri);
       if (seq != _searchSeq || !mounted) return null;
       if (response.statusCode != 200) {
@@ -2819,7 +2815,7 @@ class _NativeSearchScreenState extends State<NativeSearchScreen> {
           final List<String> suggestions = widget.effectiveSuggestions;
           final bool showHistory =
               SearchHistoryManager.instance.uiEnabled &&
-                  SearchHistoryManager.instance.queries.isNotEmpty;
+              SearchHistoryManager.instance.queries.isNotEmpty;
           if (!showHistory && suggestions.isEmpty) {
             return const Center(
               child: Padding(
@@ -2972,8 +2968,9 @@ Future<void> _shareProduct(
 ) async {
   // قیمت نهایی | حراج وقتی فعال است وگرنه قیمت عادی | formatToman خودش
   // کلمهٔ تومان را میچسباند (باگ «تومان تومان» گرفته شد).
-  final String rawPrice =
-      (item.onSale && item.salePrice.isNotEmpty) ? item.salePrice : item.price;
+  final String rawPrice = (item.onSale && item.salePrice.isNotEmpty)
+      ? item.salePrice
+      : item.price;
   final String price = rawPrice.isNotEmpty ? formatToman(rawPrice) : '';
   final String link = item.url.isNotEmpty
       ? item.url
@@ -2989,9 +2986,9 @@ Future<void> _shareProduct(
     try {
       shared =
           await const MethodChannel('wptf_share').invokeMethod<bool>(
-                'shareText',
-                <String, dynamic>{'text': text, 'title': item.title},
-              ) ??
+            'shareText',
+            <String, dynamic>{'text': text, 'title': item.title},
+          ) ??
           false;
     } catch (_) {
       shared = false;
@@ -3065,8 +3062,9 @@ List<_InquiryChannel> _quickInquiryChannels(AppConfig config, WpItem item) {
   if (phone.isNotEmpty) {
     // گارد شماره | ارقام فارسی/عربی اول انگلیسی میشوند وگرنه مسیر tel:
     // خالی میماند | فقط وقتی شمارهٔ تمیز باقی مانده باشد کانال ساخته میشود.
-    final String cleanPhone = _asciiDigits(phone)
-        .replaceAll(RegExp(r'[^0-9+]'), '');
+    final String cleanPhone = _asciiDigits(
+      phone,
+    ).replaceAll(RegExp(r'[^0-9+]'), '');
     if (cleanPhone.isNotEmpty) {
       channels.add(
         _InquiryChannel(
@@ -3202,476 +3200,477 @@ class NativeDetailScreen extends StatelessWidget {
                 fontWeight: FontWeight.bold,
                 color: Dk.text1,
               ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-          actions: <Widget>[
-            // تنظیم ۲۴ | اشتراک‌گذاری محصول | شیت بومی + فالبک کپی.
-            if (config.shareProductEnabled && item.isProduct)
-              IconButton(
-                tooltip: 'اشتراک‌گذاری',
-                onPressed: () => _shareProduct(context, item, config),
-                icon: const Icon(Icons.share_outlined, color: Dk.text1),
-              ),
-            // تنظیم ۱۸ | قلب علاقه‌مندی | زنده و کنار آیکون سبد.
-            if (config.favoritesEnabled)
-              ListenableBuilder(
-                listenable: FavoritesManager.instance,
-                builder: (BuildContext context, Widget? _) {
-                  final bool saved =
-                      FavoritesManager.instance.isFavorite(item.id);
-                  return IconButton(
-                    tooltip: 'علاقه‌مندی',
-                    onPressed: () =>
-                        FavoritesManager.instance.toggle(item),
-                    icon: Icon(
-                      saved
-                          ? Icons.favorite_rounded
-                          : Icons.favorite_border_rounded,
-                      color: saved ? Dk.discount : Dk.text1,
-                    ),
-                  );
-                },
-              ),
-            ListenableBuilder(
-              listenable: CartManager.instance,
-              builder: (BuildContext context, Widget? child) {
-                final int count = CartManager.instance.totalCount;
-                return IconButton(
-                  tooltip: '\u0633\u0628\u062F \u062E\u0631\u06CC\u062F',
-                  onPressed: () {
-                    Navigator.of(context).push<void>(
-                      MaterialPageRoute<void>(
-                        builder: (BuildContext cartContext) => Directionality(
-                          textDirection: TextDirection.rtl,
-                          child: Scaffold(
-                            appBar: AppBar(
-                              title: const Text(
-                                '\u0633\u0628\u062F \u062E\u0631\u06CC\u062F',
-                              ),
-                            ),
-                            body: CartView(
-                              config: config,
-                              onGoToShop: () => Navigator.of(
-                                cartContext,
-                              ).popUntil(
-                                (Route<dynamic> route) => route.isFirst,
-                              ),
-                            ),
-                          ),
-                        ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            actions: <Widget>[
+              // تنظیم ۲۴ | اشتراک‌گذاری محصول | شیت بومی + فالبک کپی.
+              if (config.shareProductEnabled && item.isProduct)
+                IconButton(
+                  tooltip: 'اشتراک‌گذاری',
+                  onPressed: () => _shareProduct(context, item, config),
+                  icon: const Icon(Icons.share_outlined, color: Dk.text1),
+                ),
+              // تنظیم ۱۸ | قلب علاقه‌مندی | زنده و کنار آیکون سبد.
+              if (config.favoritesEnabled)
+                ListenableBuilder(
+                  listenable: FavoritesManager.instance,
+                  builder: (BuildContext context, Widget? _) {
+                    final bool saved = FavoritesManager.instance.isFavorite(
+                      item.id,
+                    );
+                    return IconButton(
+                      tooltip: 'علاقه‌مندی',
+                      onPressed: () => FavoritesManager.instance.toggle(item),
+                      icon: Icon(
+                        saved
+                            ? Icons.favorite_rounded
+                            : Icons.favorite_border_rounded,
+                        color: saved ? Dk.discount : Dk.text1,
                       ),
                     );
                   },
-                  icon: Badge(
-                    isLabelVisible: count > 0,
-                    label: Text(
-                      toPersianDigits('$count'),
-                      style: const TextStyle(color: Colors.white),
-                    ),
-                    backgroundColor: Dk.discount,
-                    child: const Icon(
-                      Icons.shopping_bag_outlined,
-                      color: Dk.text1,
-                    ),
-                  ),
-                );
-              },
-            ),
-          ],
-          backgroundColor: Colors.white,
-          foregroundColor: Dk.text1,
-          elevation: 0.5,
-        ),
-        body: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              // گالری تصاویر محصول | لمس هر عکس = نمایشگر تمام‌قد زوم‌دار
-              if (gallery.isNotEmpty)
-                SizedBox(
-                  height: 280,
-                  child: ListView.builder(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: gallery.length,
-                    itemBuilder: (BuildContext context, int index) {
-                      return GestureDetector(
-                        onTap: () => Navigator.of(context).push(
-                          PageRouteBuilder<void>(
-                            opaque: true,
-                            transitionDuration: const Duration(
-                              milliseconds: 250,
-                            ),
-                            pageBuilder:
-                                (
-                                  _,
-                                  Animation<double> __,
-                                  Animation<double> ___,
-                                ) => _ImageViewerScreen(
-                                  images: gallery,
-                                  initialIndex: index,
+                ),
+              ListenableBuilder(
+                listenable: CartManager.instance,
+                builder: (BuildContext context, Widget? child) {
+                  final int count = CartManager.instance.totalCount;
+                  return IconButton(
+                    tooltip: '\u0633\u0628\u062F \u062E\u0631\u06CC\u062F',
+                    onPressed: () {
+                      Navigator.of(context).push<void>(
+                        MaterialPageRoute<void>(
+                          builder: (BuildContext cartContext) => Directionality(
+                            textDirection: TextDirection.rtl,
+                            child: Scaffold(
+                              appBar: AppBar(
+                                title: const Text(
+                                  '\u0633\u0628\u062F \u062E\u0631\u06CC\u062F',
                                 ),
-                            transitionsBuilder:
-                                (
-                                  _,
-                                  Animation<double> animation,
-                                  Animation<double> __,
-                                  Widget child,
-                                ) {
-                                  return SlideTransition(
-                                    position:
-                                        Tween<Offset>(
-                                          begin: const Offset(0, 1),
-                                          end: Offset.zero,
-                                        ).animate(
-                                          CurvedAnimation(
-                                            parent: animation,
-                                            curve: Curves.easeOutCubic,
-                                          ),
-                                        ),
-                                    child: child,
-                                  );
-                                },
-                          ),
-                        ),
-                        child: Container(
-                          width: MediaQuery.of(context).size.width,
-                          padding: const EdgeInsets.all(20),
-                          color: Dk.surface2,
-                          child: Image.network(
-                            gallery[index],
-                            fit: BoxFit.contain,
-                            errorBuilder:
-                                (_, Object? error, StackTrace? trace) =>
-                                    const SizedBox.shrink(),
+                              ),
+                              body: CartView(
+                                config: config,
+                                onGoToShop: () =>
+                                    Navigator.of(cartContext).popUntil(
+                                      (Route<dynamic> route) => route.isFirst,
+                                    ),
+                              ),
+                            ),
                           ),
                         ),
                       );
                     },
-                  ),
-                ),
-
-              Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      item.title,
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                        height: 1.5,
+                    icon: Badge(
+                      isLabelVisible: count > 0,
+                      label: Text(
+                        toPersianDigits('$count'),
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                      backgroundColor: Dk.discount,
+                      child: const Icon(
+                        Icons.shopping_bag_outlined,
                         color: Dk.text1,
                       ),
                     ),
-                    const SizedBox(height: 10),
-
-                    // امتیاز و دیدگاه‌ها
-                    if (item.rating > 0)
-                      Row(
-                        children: <Widget>[
-                          const Icon(
-                            Icons.star_rounded,
-                            color: Dk.star,
-                            size: 18,
-                          ),
-                          const SizedBox(width: 4),
-                          Text(
-                            item.rating.toStringAsFixed(1),
-                            style: const TextStyle(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w800,
-                              color: Dk.text1,
+                  );
+                },
+              ),
+            ],
+            backgroundColor: Colors.white,
+            foregroundColor: Dk.text1,
+            elevation: 0.5,
+          ),
+          body: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                // گالری تصاویر محصول | لمس هر عکس = نمایشگر تمام‌قد زوم‌دار
+                if (gallery.isNotEmpty)
+                  SizedBox(
+                    height: 280,
+                    child: ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: gallery.length,
+                      itemBuilder: (BuildContext context, int index) {
+                        return GestureDetector(
+                          onTap: () => Navigator.of(context).push(
+                            PageRouteBuilder<void>(
+                              opaque: true,
+                              transitionDuration: const Duration(
+                                milliseconds: 250,
+                              ),
+                              pageBuilder:
+                                  (
+                                    _,
+                                    Animation<double> __,
+                                    Animation<double> ___,
+                                  ) => _ImageViewerScreen(
+                                    images: gallery,
+                                    initialIndex: index,
+                                  ),
+                              transitionsBuilder:
+                                  (
+                                    _,
+                                    Animation<double> animation,
+                                    Animation<double> __,
+                                    Widget child,
+                                  ) {
+                                    return SlideTransition(
+                                      position:
+                                          Tween<Offset>(
+                                            begin: const Offset(0, 1),
+                                            end: Offset.zero,
+                                          ).animate(
+                                            CurvedAnimation(
+                                              parent: animation,
+                                              curve: Curves.easeOutCubic,
+                                            ),
+                                          ),
+                                      child: child,
+                                    );
+                                  },
                             ),
                           ),
-                          const SizedBox(width: 6),
-                          Text(
-                            '${item.reviewsCount} دیدگاه',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Dk.text3,
+                          child: Container(
+                            width: MediaQuery.of(context).size.width,
+                            padding: const EdgeInsets.all(20),
+                            color: Dk.surface2,
+                            child: Image.network(
+                              gallery[index],
+                              fit: BoxFit.contain,
+                              errorBuilder:
+                                  (_, Object? error, StackTrace? trace) =>
+                                      const SizedBox.shrink(),
                             ),
                           ),
-                        ],
-                      ),
+                        );
+                      },
+                    ),
+                  ),
 
-                    // قیمت در صفحه جزئیات
-                    if (item.price.isNotEmpty) ...<Widget>[
-                      const SizedBox(height: 12),
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Dk.surface2,
-                          borderRadius: BorderRadius.circular(8),
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        item.title,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          height: 1.5,
+                          color: Dk.text1,
                         ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      ),
+                      const SizedBox(height: 10),
+
+                      // امتیاز و دیدگاه‌ها
+                      if (item.rating > 0)
+                        Row(
                           children: <Widget>[
-                            const Text(
-                              'قیمت محصول:',
-                              style: TextStyle(color: Dk.text3, fontSize: 13),
+                            const Icon(
+                              Icons.star_rounded,
+                              color: Dk.star,
+                              size: 18,
                             ),
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.end,
-                              children: <Widget>[
-                                if (hasSale && discount != null)
-                                  Row(
-                                    children: <Widget>[
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 6,
-                                          vertical: 2,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: Dk.discount,
-                                          borderRadius: BorderRadius.circular(
-                                            999,
-                                          ),
-                                        ),
-                                        child: Text(
-                                          discount,
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 10.5,
-                                            fontWeight: FontWeight.w800,
-                                          ),
-                                        ),
-                                      ),
-                                      const SizedBox(width: 6),
-                                      Text(
-                                        formatToman(item.regularPrice),
-                                        style: const TextStyle(
-                                          fontSize: 11,
-                                          color: Dk.text4,
-                                          decoration:
-                                              TextDecoration.lineThrough,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  formatToman(
-                                    hasSale ? item.salePrice : item.price,
-                                  ),
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w900,
-                                    color: hasSale ? Dk.success : Dk.text1,
-                                  ),
-                                ),
-                              ],
+                            const SizedBox(width: 4),
+                            Text(
+                              item.rating.toStringAsFixed(1),
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800,
+                                color: Dk.text1,
+                              ),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              '${item.reviewsCount} دیدگاه',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Dk.text3,
+                              ),
                             ),
                           ],
                         ),
-                      ),
-                    ],
 
-                    // وضعیت انبار
-                    if (item.isProduct) ...<Widget>[
-                      const SizedBox(height: 10),
-                      if (!item.inStock) ...<Widget>[
-                        _StockBadge(
-                          text: 'ناموجود',
-                          color: const Color(0xFFD63638),
-                        ),
-                        // تنظیم ۲۶ | موجود شد خبرم کن | فقط با تیک ادمین.
-                        if (config.stockNotifyEnabled)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 10),
-                            child: _StockNotifyButton(
-                              item: item,
-                              config: config,
-                            ),
+                      // قیمت در صفحه جزئیات
+                      if (item.price.isNotEmpty) ...<Widget>[
+                        const SizedBox(height: 12),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Dk.surface2,
+                            borderRadius: BorderRadius.circular(8),
                           ),
-                      ]
-                      else if (item.stockQuantity != null &&
-                          item.stockQuantity! > 0 &&
-                          item.stockQuantity! <= 5)
-                        _StockBadge(
-                          text:
-                              'تنها ${item.stockQuantity} عدد در انبار باقیست!',
-                          color: const Color(0xFF996800),
-                        ),
-                      if (item.sku.isNotEmpty)
-                        Padding(
-                          padding: const EdgeInsets.only(top: 6),
-                          child: Text(
-                            'کد محصول: ${item.sku}',
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Dk.text3,
-                            ),
-                          ),
-                        ),
-                    ],
-
-                    // تنظیم ۲۵ | مشاوره و استعلام سریع | فقط با تیک ادمین و
-                    // حداقل یک کانال تماس پیکربندی‌شده.
-                    if (config.quickInquiryEnabled &&
-                        item.isProduct &&
-                        _quickInquiryChannels(config, item).isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 14),
-                        child: InkWell(
-                          onTap: () =>
-                              _openInquirySheet(context, config, item),
-                          borderRadius: BorderRadius.circular(8),
-                          child: Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(12),
-                            decoration: BoxDecoration(
-                              color: Dk.surface2,
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: Dk.border),
-                            ),
-                            child: Row(
-                              children: <Widget>[
-                                Icon(
-                                  Icons.support_agent_rounded,
-                                  size: 20,
-                                  color: config.primaryColor,
-                                ),
-                                const SizedBox(width: 10),
-                                const Expanded(
-                                  child: Text(
-                                    'سوال یا مشاوره قبل از خرید؟',
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: <Widget>[
+                              const Text(
+                                'قیمت محصول:',
+                                style: TextStyle(color: Dk.text3, fontSize: 13),
+                              ),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: <Widget>[
+                                  if (hasSale && discount != null)
+                                    Row(
+                                      children: <Widget>[
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 6,
+                                            vertical: 2,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: Dk.discount,
+                                            borderRadius: BorderRadius.circular(
+                                              999,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            discount,
+                                            style: const TextStyle(
+                                              color: Colors.white,
+                                              fontSize: 10.5,
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          formatToman(item.regularPrice),
+                                          style: const TextStyle(
+                                            fontSize: 11,
+                                            color: Dk.text4,
+                                            decoration:
+                                                TextDecoration.lineThrough,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    formatToman(
+                                      hasSale ? item.salePrice : item.price,
+                                    ),
                                     style: TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.w700,
-                                      color: Dk.text1,
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w900,
+                                      color: hasSale ? Dk.success : Dk.text1,
                                     ),
                                   ),
-                                ),
-                                const Icon(
-                                  Icons.chevron_left_rounded,
-                                  size: 18,
-                                  color: Dk.text3,
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-
-                    // ویژگی‌های محصول
-                    if (item.attributes.isNotEmpty) ...<Widget>[
-                      const SizedBox(height: 14),
-                      for (final WpAttribute attribute in item.attributes)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 6),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: <Widget>[
-                              Text(
-                                '${attribute.name}: ',
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w700,
-                                  color: Dk.text1,
-                                ),
-                              ),
-                              Expanded(
-                                child: Text(
-                                  attribute.options.join('، '),
-                                  style: const TextStyle(
-                                    fontSize: 13,
-                                    height: 1.8,
-                                    color: Dk.text2,
-                                  ),
-                                ),
+                                ],
                               ),
                             ],
                           ),
                         ),
+                      ],
+
+                      // وضعیت انبار
+                      if (item.isProduct) ...<Widget>[
+                        const SizedBox(height: 10),
+                        if (!item.inStock) ...<Widget>[
+                          _StockBadge(
+                            text: 'ناموجود',
+                            color: const Color(0xFFD63638),
+                          ),
+                          // تنظیم ۲۶ | موجود شد خبرم کن | فقط با تیک ادمین.
+                          if (config.stockNotifyEnabled)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 10),
+                              child: _StockNotifyButton(
+                                item: item,
+                                config: config,
+                              ),
+                            ),
+                        ] else if (item.stockQuantity != null &&
+                            item.stockQuantity! > 0 &&
+                            item.stockQuantity! <= 5)
+                          _StockBadge(
+                            text:
+                                'تنها ${item.stockQuantity} عدد در انبار باقیست!',
+                            color: const Color(0xFF996800),
+                          ),
+                        if (item.sku.isNotEmpty)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: Text(
+                              'کد محصول: ${item.sku}',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Dk.text3,
+                              ),
+                            ),
+                          ),
+                      ],
+
+                      // تنظیم ۲۵ | مشاوره و استعلام سریع | فقط با تیک ادمین و
+                      // حداقل یک کانال تماس پیکربندی‌شده.
+                      if (config.quickInquiryEnabled &&
+                          item.isProduct &&
+                          _quickInquiryChannels(config, item).isNotEmpty)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 14),
+                          child: InkWell(
+                            onTap: () =>
+                                _openInquirySheet(context, config, item),
+                            borderRadius: BorderRadius.circular(8),
+                            child: Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: Dk.surface2,
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: Dk.border),
+                              ),
+                              child: Row(
+                                children: <Widget>[
+                                  Icon(
+                                    Icons.support_agent_rounded,
+                                    size: 20,
+                                    color: config.primaryColor,
+                                  ),
+                                  const SizedBox(width: 10),
+                                  const Expanded(
+                                    child: Text(
+                                      'سوال یا مشاوره قبل از خرید؟',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w700,
+                                        color: Dk.text1,
+                                      ),
+                                    ),
+                                  ),
+                                  const Icon(
+                                    Icons.chevron_left_rounded,
+                                    size: 18,
+                                    color: Dk.text3,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+
+                      // ویژگی‌های محصول
+                      if (item.attributes.isNotEmpty) ...<Widget>[
+                        const SizedBox(height: 14),
+                        for (final WpAttribute attribute in item.attributes)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 6),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: <Widget>[
+                                Text(
+                                  '${attribute.name}: ',
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: Dk.text1,
+                                  ),
+                                ),
+                                Expanded(
+                                  child: Text(
+                                    attribute.options.join('، '),
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      height: 1.8,
+                                      color: Dk.text2,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                      ],
+
+                      const SizedBox(height: 16),
+                      const Divider(height: 1, color: Dk.border),
+                      const SizedBox(height: 12),
+                      const Text(
+                        'توضیحات:',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: Dk.text1,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      HtmlWidget(
+                        item.content.isNotEmpty
+                            ? item.content
+                            : '<p>توضیحات تکمیلی برای این محصول ثبت نشده است.</p>',
+                        textStyle: const TextStyle(
+                          color: Dk.text2,
+                          fontSize: 13,
+                          height: 1.8,
+                        ),
+                      ),
+
+                      // تنظیم ۱۹ | محصولات مرتبط | فقط با تیک ادمین و فقط
+                      // برای محصول | تیک خاموش = هیچ ردیف مرتبطی نمایش داده
+                      // نمیشود | همسلوک با کارت ۱۷ و ۱۸.
+                      if (config.relatedProductsEnabled && item.isProduct)
+                        _RelatedProductsSection(config: config, item: item),
+
+                      // دیدگاه‌های کاربران | با خط جداکننده، بالای دکمه سبد
+                      const SizedBox(height: 24),
+                      const Divider(height: 1, color: Dk.border),
+                      const SizedBox(height: 16),
+                      ProductReviewsSection(
+                        item: item,
+                        config: config,
+                        requireLogin: config.reviewsRequireLogin,
+                        onGoToLogin: onGoToLogin,
+                      ),
                     ],
+                  ),
+                ),
+              ],
+            ),
+          ),
 
-                    const SizedBox(height: 16),
-                    const Divider(height: 1, color: Dk.border),
-                    const SizedBox(height: 12),
-                    const Text(
-                      'توضیحات:',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                        color: Dk.text1,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    HtmlWidget(
-                      item.content.isNotEmpty
-                          ? item.content
-                          : '<p>توضیحات تکمیلی برای این محصول ثبت نشده است.</p>',
-                      textStyle: const TextStyle(
-                        color: Dk.text2,
-                        fontSize: 13,
-                        height: 1.8,
-                      ),
-                    ),
-
-                    // تنظیم ۱۹ | محصولات مرتبط | فقط با تیک ادمین و فقط
-                    // برای محصول | تیک خاموش = هیچ ردیف مرتبطی نمایش داده
-                    // نمیشود | همسلوک با کارت ۱۷ و ۱۸.
-                    if (config.relatedProductsEnabled && item.isProduct)
-                      _RelatedProductsSection(config: config, item: item),
-
-                    // دیدگاه‌های کاربران | با خط جداکننده، بالای دکمه سبد
-                    const SizedBox(height: 24),
-                    const Divider(height: 1, color: Dk.border),
-                    const SizedBox(height: 16),
-                    ProductReviewsSection(
-                      item: item,
-                      config: config,
-                      requireLogin: config.reviewsRequireLogin,
-                      onGoToLogin: onGoToLogin,
-                    ),
-                  ],
+          // دکمه ثابت خرید در پایین صفحه
+          bottomNavigationBar: Container(
+            padding: EdgeInsets.only(
+              left: 16,
+              right: 16,
+              top: 12,
+              bottom: 12 + MediaQuery.of(context).padding.bottom,
+            ),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border(top: BorderSide(color: Dk.border)),
+            ),
+            child: ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: config.primaryColor,
+                foregroundColor: Colors.white,
+                minimumSize: const Size.fromHeight(48),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
                 ),
               ),
-            ],
-          ),
-        ),
-
-        // دکمه ثابت خرید در پایین صفحه
-        bottomNavigationBar: Container(
-          padding: EdgeInsets.only(
-            left: 16,
-            right: 16,
-            top: 12,
-            bottom: 12 + MediaQuery.of(context).padding.bottom,
-          ),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            border: Border(top: BorderSide(color: Dk.border)),
-          ),
-          child: ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: config.primaryColor,
-              foregroundColor: Colors.white,
-              minimumSize: const Size.fromHeight(48),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
+              onPressed: item.purchasable
+                  ? () {
+                      CartManager.instance.addItem(item);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('کالا به سبد خرید اضافه شد'),
+                          duration: Duration(seconds: 1),
+                        ),
+                      );
+                    }
+                  : null,
+              child: Text(
+                item.purchasable ? 'افزودن به سبد خرید' : 'خرید در دسترس نیست',
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
-            onPressed: item.purchasable
-                ? () {
-                    CartManager.instance.addItem(item);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('کالا به سبد خرید اضافه شد'),
-                        duration: Duration(seconds: 1),
-                      ),
-                    );
-                  }
-                : null,
-            child: Text(
-              item.purchasable ? 'افزودن به سبد خرید' : 'خرید در دسترس نیست',
-              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
-            ),
           ),
         ),
-      ),
       ),
     );
   }
@@ -3793,6 +3792,125 @@ class _ImageViewerScreenState extends State<_ImageViewerScreen> {
   }
 }
 
+class _RelatedProductDetailScreen extends StatefulWidget {
+  const _RelatedProductDetailScreen({
+    required this.productId,
+    required this.config,
+  });
+
+  final int productId;
+  final AppConfig config;
+
+  @override
+  State<_RelatedProductDetailScreen> createState() =>
+      _RelatedProductDetailScreenState();
+}
+
+class _RelatedProductDetailScreenState
+    extends State<_RelatedProductDetailScreen> {
+  late Future<WpItem> _product;
+
+  @override
+  void initState() {
+    super.initState();
+    _product = _fetchProduct();
+  }
+
+  Future<WpItem> _fetchProduct() async {
+    final ApiPage response = await fetchApiPage(
+      Uri.parse('${widget.config.effectiveApiBaseUrl}posts').replace(
+        queryParameters: <String, String>{
+          'type': 'product',
+          'id': '${widget.productId}',
+          'per_page': '1',
+          'page': '1',
+        },
+      ),
+    );
+    if (response.statusCode != 200) {
+      throw const HttpException('Product request failed');
+    }
+    final dynamic decoded = jsonDecode(response.body);
+    if (decoded is! List ||
+        decoded.length != 1 ||
+        decoded.first is! Map<String, dynamic>) {
+      throw const FormatException('Invalid product response');
+    }
+    final Map<String, dynamic> data = decoded.first as Map<String, dynamic>;
+    final dynamic product = data['product'];
+    const List<String> requiredFields = <String>[
+      'price',
+      'regular_price',
+      'sale_price',
+      'in_stock',
+      'purchasable',
+      'on_sale',
+      'sku',
+      'stock_quantity',
+      'rating',
+      'reviews_count',
+      'gallery_images',
+      'attributes',
+      'related_products',
+    ];
+    if (data['id'] != widget.productId ||
+        data['type'] != 'product' ||
+        data['excerpt'] is! String ||
+        data['content'] is! String ||
+        product is! Map<String, dynamic> ||
+        !requiredFields.every(product.containsKey) ||
+        product['in_stock'] is! bool ||
+        product['purchasable'] is! bool ||
+        product['on_sale'] is! bool ||
+        product['gallery_images'] is! List ||
+        product['attributes'] is! List ||
+        product['related_products'] is! List) {
+      throw const FormatException('Incomplete product response');
+    }
+    return WpItem.fromMap(data);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<WpItem>(
+      future: _product,
+      builder: (BuildContext context, AsyncSnapshot<WpItem> snapshot) {
+        final bool loading = snapshot.connectionState != ConnectionState.done;
+        if (!loading && snapshot.hasData) {
+          return NativeDetailScreen(
+            item: snapshot.data!,
+            config: widget.config,
+          );
+        }
+        return Directionality(
+          textDirection: TextDirection.rtl,
+          child: Scaffold(
+            backgroundColor: Colors.white,
+            appBar: AppBar(title: const Text('جزئیات محصول')),
+            body: Center(
+              child: loading
+                  ? CircularProgressIndicator(color: widget.config.primaryColor)
+                  : Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        const Text('اطلاعات محصول دریافت نشد'),
+                        const SizedBox(height: 12),
+                        TextButton(
+                          onPressed: () => setState(() {
+                            _product = _fetchProduct();
+                          }),
+                          child: const Text('تلاش مجدد'),
+                        ),
+                      ],
+                    ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
 /// تنظیم ۱۹ | ردیف افقی محصولات مرتبط | اول پیلود خود محصول
 /// (wc_get_related_products)، وگرنه تا ۸ محصول همدسته زنده گرفته میشود |
 /// خالی یا خطای شبکه = کل بخش بیصدا حذف | بدون هیچ اندپوینت تازه.
@@ -3836,8 +3954,7 @@ class _RelatedProductsSectionState extends State<_RelatedProductsSection> {
   void _prepare() {
     final List<WpItem> bundled = widget.item.relatedProducts
         .where(
-          (WpItem related) =>
-              related.id > 0 && related.id != widget.item.id,
+          (WpItem related) => related.id > 0 && related.id != widget.item.id,
         )
         .toList(growable: false);
     if (bundled.isNotEmpty) {
@@ -3861,12 +3978,13 @@ class _RelatedProductsSectionState extends State<_RelatedProductsSection> {
         ),
       );
       final dynamic decoded = jsonDecode(page.body);
-      final List<WpItem> fetched = (decoded is List ? decoded : const <dynamic>[])
-          .whereType<Map<String, dynamic>>()
-          .map(WpItem.fromMap)
-          .where((WpItem related) => related.id != widget.item.id)
-          .take(_maxItems)
-          .toList(growable: false);
+      final List<WpItem> fetched =
+          (decoded is List ? decoded : const <dynamic>[])
+              .whereType<Map<String, dynamic>>()
+              .map(WpItem.fromMap)
+              .where((WpItem related) => related.id != widget.item.id)
+              .take(_maxItems)
+              .toList(growable: false);
       if (!mounted) return;
       setState(() {
         _related = fetched;
@@ -3949,8 +4067,8 @@ class _RelatedProductsSectionState extends State<_RelatedProductsSection> {
                   primaryColor: widget.config.primaryColor,
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute<void>(
-                      builder: (_) => NativeDetailScreen(
-                        item: relatedItem,
+                      builder: (_) => _RelatedProductDetailScreen(
+                        productId: relatedItem.id,
                         config: widget.config,
                       ),
                     ),
@@ -4061,8 +4179,7 @@ class _RecentlyViewedSection extends StatelessWidget {
                       ),
                     ),
                     InkWell(
-                      onTap: () =>
-                          RecentlyViewedManager.instance.clearAll(),
+                      onTap: () => RecentlyViewedManager.instance.clearAll(),
                       borderRadius: BorderRadius.circular(8),
                       child: Padding(
                         padding: const EdgeInsets.symmetric(
@@ -4080,10 +4197,7 @@ class _RecentlyViewedSection extends StatelessWidget {
                             SizedBox(width: 4),
                             Text(
                               'پاک کردن',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Dk.text3,
-                              ),
+                              style: TextStyle(fontSize: 12, color: Dk.text3),
                             ),
                           ],
                         ),
@@ -4109,10 +4223,8 @@ class _RecentlyViewedSection extends StatelessWidget {
                         primaryColor: config.primaryColor,
                         onTap: () => Navigator.of(context).push(
                           MaterialPageRoute<void>(
-                            builder: (_) => NativeDetailScreen(
-                              config: config,
-                              item: item,
-                            ),
+                            builder: (_) =>
+                                NativeDetailScreen(config: config, item: item),
                           ),
                         ),
                       ),
@@ -4313,9 +4425,7 @@ class SortFilterBar extends StatelessWidget {
                   vertical: 7,
                 ),
                 decoration: BoxDecoration(
-                  color: inStockOnly
-                      ? const Color(0xFFEAF7EC)
-                      : Colors.white,
+                  color: inStockOnly ? const Color(0xFFEAF7EC) : Colors.white,
                   borderRadius: BorderRadius.circular(999),
                   border: Border.all(
                     color: inStockOnly ? Dk.success : Dk.border,
@@ -4441,7 +4551,7 @@ class _StockNotifyButtonState extends State<_StockNotifyButton> {
 
   /// ارسال درخواست ثبت | خروجی رکورد | needPhone یعنی حساب بدون شماره است.
   Future<({bool ok, String message, bool needPhone, bool alreadyInStock})>
-      _postSubscribe({required String token, String phone = ''}) async {
+  _postSubscribe({required String token, String phone = ''}) async {
     HttpClient? client;
     try {
       client = HttpClient()..connectionTimeout = const Duration(seconds: 10);
@@ -4479,8 +4589,9 @@ class _StockNotifyButtonState extends State<_StockNotifyButton> {
       final String message = decoded['message'] is String
           ? decoded['message'] as String
           : 'خطا در ارتباط با سایت';
-      final String errorCode =
-          decoded['code'] is String ? decoded['code'] as String : '';
+      final String errorCode = decoded['code'] is String
+          ? decoded['code'] as String
+          : '';
       return (
         ok: response.statusCode == 200 && decoded['success'] == true,
         message: message,
@@ -4556,8 +4667,8 @@ class _StockNotifyButtonState extends State<_StockNotifyButton> {
   /// دیالوگ مهمان | خروجی = ارقام انگلیسی شماره یا رشتهٔ خالی یعنی انصراف |
   /// کنترلر در State نگه داشته و در dispose تمیز میشود.
   Future<String> _askGuestPhone() async {
-    final TextEditingController controller =
-        _guestPhoneController ??= TextEditingController();
+    final TextEditingController controller = _guestPhoneController ??=
+        TextEditingController();
     controller.clear();
     final String? result = await showDialog<String>(
       context: context,
@@ -4631,9 +4742,7 @@ class _StockNotifyButtonState extends State<_StockNotifyButton> {
           foregroundColor: Dk.text1,
           backgroundColor: Colors.white,
           side: const BorderSide(color: Dk.border),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           textStyle: const TextStyle(
             fontSize: 12.5,
             fontWeight: FontWeight.w700,
