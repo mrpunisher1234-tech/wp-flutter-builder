@@ -459,6 +459,8 @@ jobs:
             if [ -s /tmp/wptf/splash_logo.png ]; then
               echo "SPLASH_LOGO_READY=true" >> "$GITHUB_ENV"
             fi
+          elif [ "$SPLASH_LOGO_ENABLED" = 'true' ]; then
+            echo "::warning::No downloadable splash logo available. The app keeps its text-only splash fallback."
           fi
 
           # The app compares this against its live config to detect when the bundled asset is stale.
@@ -622,13 +624,22 @@ jobs:
              && [ -f 'android/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml' ]; then
             perl -0pi -e 's/(android:icon="\@mipmap\/ic_launcher")/$1\n        android:roundIcon="\@mipmap\/ic_launcher_round"/' "$MANIFEST"
           fi
-          perl -0pi -e "s/android:label=\"[^\"]*\"/android:label=\"\Q$ENV{APP_NAME}\E\"/" "$MANIFEST"
+          perl -0pi -e 'my $label = $ENV{APP_NAME}; $label =~ s/&/&amp;/g; $label =~ s/</&lt;/g; $label =~ s/>/&gt;/g; $label =~ s/"/&quot;/g; s/android:label="[^"]*"/android:label="$label"/' "$MANIFEST"
           echo "AndroidManifest patched successfully."
 
       - name: 'Patch Application ID (per-site package name)'
         run: |
           GRADLE_FILE="android/app/build.gradle.kts"
-          perl -0pi -e "s/applicationId = \"[^\"]*\"/applicationId = \"\Q$ENV{PACKAGE_NAME}\E\"/" "$GRADLE_FILE"
+          perl -0pi -e 's/\bapplicationId\s*=\s*"[^"]*"/applicationId = "$ENV{PACKAGE_NAME}"/' "$GRADLE_FILE"
+          python3 -c '
+          import os, pathlib, re, sys
+          source = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+          identifiers = re.findall(r"\bapplicationId\s*=\s*\"([^\"]*)\"", source)
+          expected = os.environ.get("PACKAGE_NAME", "")
+          if len(identifiers) != 1 or identifiers[0] != expected or not re.fullmatch(r"[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+", identifiers[0]):
+              print("::error::Application ID patch validation failed; build stopped before Gradle.")
+              sys.exit(1)
+          ' "$GRADLE_FILE"
           echo "applicationId patched to ${PACKAGE_NAME}."
 
       - name: 'Flutter Pub Get'
