@@ -392,7 +392,7 @@ class _PriceLine extends StatelessWidget {
       textBaseline: TextBaseline.alphabetic,
       children: <Widget>[
         Text(
-          amount.isEmpty ? '—' : amount,
+          amount.isEmpty ? '-' : amount,
           style: const TextStyle(
             color: _ink,
             fontSize: 34,
@@ -647,6 +647,9 @@ class WpItem {
     final List<dynamic> categories = map['categories'] is List
         ? map['categories'] as List<dynamic>
         : const <dynamic>[];
+    final Object? rawGalleryImages = product['gallery_images'];
+    final Object? rawAttributes = product['attributes'];
+    final Object? rawRelatedProducts = product['related_products'];
 
     return WpItem(
       id: (map['id'] as num?)?.toInt() ?? 0,
@@ -671,37 +674,36 @@ class WpItem {
       rating: (product['rating'] as num?)?.toDouble() ?? 0,
       reviewsCount: (product['reviews_count'] as num?)?.toInt() ?? 0,
       galleryImages:
-          (product['gallery_images'] as List?)
-              ?.map(
+          (rawGalleryImages is List ? rawGalleryImages : const <dynamic>[])
+              .map(
                 (dynamic url) =>
                     AppConfig.mapEmulatorUrl((url as String? ?? '').trim()),
               )
               .where((String url) => url.isNotEmpty)
-              .toList(growable: false) ??
-          const <String>[],
+              .toList(growable: false),
       attributes:
-          (product['attributes'] as List?)
-              ?.whereType<Map<String, dynamic>>()
+          (rawAttributes is List ? rawAttributes : const <dynamic>[])
+              .whereType<Map<String, dynamic>>()
               .map(
-                (Map<String, dynamic> attribute) => WpAttribute(
-                  name: (attribute['name'] as String?) ?? '',
-                  slug: (attribute['slug'] as String?) ?? '',
-                  options:
-                      (attribute['options'] as List?)
-                          ?.whereType<String>()
-                          .toList(growable: false) ??
-                      const <String>[],
-                  variation: attribute['variation'] == true,
-                ),
+                (Map<String, dynamic> attribute) {
+                  final Object? rawOptions = attribute['options'];
+                  return WpAttribute(
+                    name: (attribute['name'] as String?) ?? '',
+                    slug: (attribute['slug'] as String?) ?? '',
+                    options:
+                        (rawOptions is List ? rawOptions : const <dynamic>[])
+                            .whereType<String>()
+                            .toList(growable: false),
+                    variation: attribute['variation'] == true,
+                  );
+                },
               )
-              .toList(growable: false) ??
-          const <WpAttribute>[],
+              .toList(growable: false),
       relatedProducts:
-          (product['related_products'] as List?)
-              ?.whereType<Map<String, dynamic>>()
+          (rawRelatedProducts is List ? rawRelatedProducts : const <dynamic>[])
+              .whereType<Map<String, dynamic>>()
               .map(WpItem.fromMap)
-              .toList(growable: false) ??
-          const <WpItem>[],
+              .toList(growable: false),
       categoryNames: categories
           .whereType<Map>()
           .map(
@@ -997,6 +999,7 @@ class _NativeHomeScreenState extends State<NativeHomeScreen> {
         final String body = response.body;
         final dynamic decoded = jsonDecode(body);
         if (decoded is Map<String, dynamic> && mounted) {
+          final Object? rawSearchSuggestions = decoded['search_suggestions'];
           setState(() {
             _banners = AppConfig.parseBanners(decoded['native_banners']);
             _offerCountdownEnd =
@@ -1009,7 +1012,9 @@ class _NativeHomeScreenState extends State<NativeHomeScreen> {
                 (((decoded['header_logo'] as Map?)?['name'] as String?) ?? '')
                     .trim();
             _searchSuggestions =
-                ((decoded['search_suggestions'] as List?) ?? const <dynamic>[])
+                (rawSearchSuggestions is List
+                        ? rawSearchSuggestions
+                        : const <dynamic>[])
                     .map((dynamic term) => ((term as String?) ?? '').trim())
                     .where((String term) => term.isNotEmpty)
                     .take(4)

@@ -9,6 +9,8 @@ import 'package:wp_flutter_app/bazaar_payment.dart';
 import 'package:wp_flutter_app/cart_screen.dart';
 import 'package:wp_flutter_app/native_mode.dart';
 
+class _RealHttpOverrides extends HttpOverrides {}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
@@ -207,9 +209,11 @@ void main() {
       BazaarPayments.instance.init(
         apiBase: 'http://127.0.0.1:${server.port}/',
       );
-      final BazaarSettlement result =
-          await BazaarPayments.instance.settleAndWait('purchase-token-712');
-      await responder;
+      final BazaarSettlement result = await HttpOverrides.runWithHttpOverrides(
+        () => BazaarPayments.instance.settleAndWait('purchase-token-712'),
+        _RealHttpOverrides(),
+      );
+      await responder.timeout(const Duration(seconds: 5));
       expect(requestPath, '/payment/bazaar/status');
       expect(requestBody['purchase_token'], 'purchase-token-712');
       expect(result.credited, isTrue);
@@ -243,9 +247,11 @@ void main() {
       BazaarPayments.instance.init(
         apiBase: 'http://127.0.0.1:${server.port}/',
       );
-      final BazaarSettlement result =
-          await BazaarPayments.instance.settleAndWait('unknown-token');
-      await responder;
+      final BazaarSettlement result = await HttpOverrides.runWithHttpOverrides(
+        () => BazaarPayments.instance.settleAndWait('unknown-token'),
+        _RealHttpOverrides(),
+      );
+      await responder.timeout(const Duration(seconds: 5));
       expect(result.credited, isFalse);
       expect(result.orderId, 0);
     } finally {

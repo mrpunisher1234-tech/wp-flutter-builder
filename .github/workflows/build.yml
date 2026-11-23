@@ -1,11 +1,21 @@
 name: WP to Flutter Cloud Build Engine
-run-name: ${{ github.event.client_payload.build.claim_key && format('WPTF Build / {0}', github.event.client_payload.build.claim_key) || github.event.client_payload.claim_key && format('WPTF Build / {0}', github.event.client_payload.claim_key) || 'WP to Flutter Cloud Build Engine' }}
+run-name: ${{ github.event_name == 'workflow_dispatch' && inputs.claim_key && format('WPTF Build / {0}', inputs.claim_key) || github.event.client_payload.build.claim_key && format('WPTF Build / {0}', github.event.client_payload.build.claim_key) || github.event.client_payload.claim_key && format('WPTF Build / {0}', github.event.client_payload.claim_key) || 'WP to Flutter Cloud Build Engine' }}
 
 on:
   repository_dispatch:
     types: [build_app]
   workflow_dispatch:
     inputs:
+      claim_key:
+        description: 'Fresh 32-character hexadecimal build claim'
+        type: string
+        required: false
+        default: ''
+      build_payload:
+        description: 'Complete JSON build envelope'
+        type: string
+        required: false
+        default: ''
       license_key:
         description: 'Build license key (required security guard)'
         required: true
@@ -107,31 +117,87 @@ jobs:
     name: Compile & Publish
     runs-on: ubuntu-latest
     env:
-      APP_NAME: ${{ github.event.client_payload.build.app_name || github.event.client_payload.app_name || github.event.inputs.app_name || 'Demo App' }}
-      SITE_URL: ${{ github.event.client_payload.build.site_url || github.event.client_payload.site_url || github.event.inputs.site_url || 'https://example.com' }}
-      PRIMARY_COLOR: ${{ github.event.client_payload.build.primary_color || github.event.client_payload.primary_color || github.event.inputs.primary_color || '#2271b1' }}
-      BUILD_FORMAT: ${{ github.event.client_payload.build.build_format || github.event.client_payload.build_format || github.event.inputs.build_format || 'both' }}
-      RENDER_MODE: ${{ github.event.client_payload.build.render_mode || github.event.client_payload.render_mode || github.event.inputs.render_mode || 'webview' }}
-      API_BASE_URL: ${{ github.event.client_payload.build.api_base_url || github.event.client_payload.api_base_url || github.event.inputs.api_base_url || '' }}
-      APP_ICON_URL: ${{ github.event.client_payload.build.app_icon_url || github.event.client_payload.app_icon_url || github.event.inputs.app_icon_url || '' }}
-      LAUNCHER_ICON_URL: ${{ github.event.client_payload.build.launcher_icon_url || github.event.client_payload.launcher_icon_url || github.event.inputs.launcher_icon_url || github.event.client_payload.build.app_icon_url || github.event.client_payload.app_icon_url || github.event.inputs.app_icon_url || '' }}
-      KEYSTORE_B64: ${{ github.event.client_payload.build.keystore_b64 || github.event.client_payload.keystore_b64 || github.event.inputs.keystore_b64 || '' }}
-      KEYSTORE_PASS: ${{ github.event.client_payload.build.keystore_pass || github.event.client_payload.keystore_pass || github.event.inputs.keystore_pass || '' }}
-      KEY_ALIAS: ${{ github.event.client_payload.build.key_alias || github.event.client_payload.key_alias || github.event.inputs.key_alias || 'wptf_release' }}
-      PACKAGE_NAME: ${{ github.event.client_payload.build.package_name || github.event.client_payload.package_name || github.event.inputs.package_name || '' }}
-      SPLASH_SHOW_LOGO: ${{ contains(toJSON(github.event.client_payload.build), '"splash_show_logo"') && format('{0}', github.event.client_payload.build.splash_show_logo) || contains(toJSON(github.event.client_payload), '"splash_show_logo"') && format('{0}', github.event.client_payload.splash_show_logo) || github.event.inputs.splash_show_logo || 'true' }}
-      SPLASH_IMAGE_URL: ${{ github.event.client_payload.build.splash_image_url || github.event.client_payload.splash_image_url || github.event.inputs.splash_image_url || '' }}
-      SPLASH_SITE_ICON: ${{ github.event.client_payload.build.splash_site_icon || github.event.client_payload.splash_site_icon || github.event.inputs.splash_site_icon || '' }}
-      SPLASH_LOGO_URL: ${{ github.event.client_payload.build.splash_logo_url || github.event.client_payload.splash_logo_url || github.event.inputs.splash_logo_url || github.event.client_payload.build.splash_image_url || github.event.client_payload.splash_image_url || github.event.inputs.splash_image_url || github.event.client_payload.build.splash_site_icon || github.event.client_payload.splash_site_icon || github.event.inputs.splash_site_icon || '' }}
-      SPLASH_SITE_NAME: ${{ github.event.client_payload.build.splash_site_name || github.event.client_payload.splash_site_name || github.event.inputs.splash_site_name || '' }}
-      SPLASH_BG_COLOR: ${{ github.event.client_payload.build.splash_bg_color || github.event.client_payload.splash_bg_color || github.event.inputs.splash_bg_color || '' }}
-      SPLASH_TEXT: ${{ github.event.client_payload.build.splash_text || github.event.client_payload.splash_text || github.event.inputs.splash_text || '' }}
-      SPLASH_TEXT_COLOR: ${{ github.event.client_payload.build.splash_text_color || github.event.client_payload.splash_text_color || github.event.inputs.splash_text_color || '#ffffff' }}
-      SEARCH_SUGGESTIONS: ${{ github.event.client_payload.build.search_suggestions || github.event.client_payload.search_suggestions || github.event.inputs.search_suggestions || '[]' }}
+      APP_NAME: ${{ fromJSON(inputs.build_payload || '{}').build.app_name || github.event.client_payload.build.app_name || github.event.client_payload.app_name || github.event.inputs.app_name || 'Demo App' }}
+      SITE_URL: ${{ fromJSON(inputs.build_payload || '{}').build.site_url || github.event.client_payload.build.site_url || github.event.client_payload.site_url || github.event.inputs.site_url || 'https://example.com' }}
+      PRIMARY_COLOR: ${{ fromJSON(inputs.build_payload || '{}').build.primary_color || github.event.client_payload.build.primary_color || github.event.client_payload.primary_color || github.event.inputs.primary_color || '#2271b1' }}
+      BUILD_FORMAT: ${{ fromJSON(inputs.build_payload || '{}').build.build_format || github.event.client_payload.build.build_format || github.event.client_payload.build_format || github.event.inputs.build_format || 'both' }}
+      RENDER_MODE: ${{ fromJSON(inputs.build_payload || '{}').build.render_mode || github.event.client_payload.build.render_mode || github.event.client_payload.render_mode || github.event.inputs.render_mode || 'webview' }}
+      API_BASE_URL: ${{ fromJSON(inputs.build_payload || '{}').build.api_base_url || github.event.client_payload.build.api_base_url || github.event.client_payload.api_base_url || github.event.inputs.api_base_url || '' }}
+      APP_ICON_URL: ${{ fromJSON(inputs.build_payload || '{}').build.app_icon_url || github.event.client_payload.build.app_icon_url || github.event.client_payload.app_icon_url || github.event.inputs.app_icon_url || '' }}
+      LAUNCHER_ICON_URL: ${{ fromJSON(inputs.build_payload || '{}').build.launcher_icon_url || github.event.client_payload.build.launcher_icon_url || github.event.client_payload.launcher_icon_url || github.event.inputs.launcher_icon_url || github.event.client_payload.build.app_icon_url || github.event.client_payload.app_icon_url || github.event.inputs.app_icon_url || '' }}
+      KEYSTORE_B64: ${{ fromJSON(inputs.build_payload || '{}').build.keystore_b64 || github.event.client_payload.build.keystore_b64 || github.event.client_payload.keystore_b64 || github.event.inputs.keystore_b64 || '' }}
+      KEYSTORE_PASS: ${{ fromJSON(inputs.build_payload || '{}').build.keystore_pass || github.event.client_payload.build.keystore_pass || github.event.client_payload.keystore_pass || github.event.inputs.keystore_pass || '' }}
+      KEY_ALIAS: ${{ fromJSON(inputs.build_payload || '{}').build.key_alias || github.event.client_payload.build.key_alias || github.event.client_payload.key_alias || github.event.inputs.key_alias || 'wptf_release' }}
+      PACKAGE_NAME: ${{ fromJSON(inputs.build_payload || '{}').build.package_name || github.event.client_payload.build.package_name || github.event.client_payload.package_name || github.event.inputs.package_name || '' }}
+      SPLASH_SHOW_LOGO: ${{ contains(toJSON(fromJSON(inputs.build_payload || '{}').build), '"splash_show_logo"') && format('{0}', fromJSON(inputs.build_payload || '{}').build.splash_show_logo) || contains(toJSON(github.event.client_payload.build), '"splash_show_logo"') && format('{0}', github.event.client_payload.build.splash_show_logo) || contains(toJSON(github.event.client_payload), '"splash_show_logo"') && format('{0}', github.event.client_payload.splash_show_logo) || github.event.inputs.splash_show_logo || 'true' }}
+      SPLASH_IMAGE_URL: ${{ fromJSON(inputs.build_payload || '{}').build.splash_image_url || github.event.client_payload.build.splash_image_url || github.event.client_payload.splash_image_url || github.event.inputs.splash_image_url || '' }}
+      SPLASH_SITE_ICON: ${{ fromJSON(inputs.build_payload || '{}').build.splash_site_icon || github.event.client_payload.build.splash_site_icon || github.event.client_payload.splash_site_icon || github.event.inputs.splash_site_icon || '' }}
+      SPLASH_LOGO_URL: ${{ fromJSON(inputs.build_payload || '{}').build.splash_logo_url || github.event.client_payload.build.splash_logo_url || github.event.client_payload.splash_logo_url || github.event.inputs.splash_logo_url || github.event.client_payload.build.splash_image_url || github.event.client_payload.splash_image_url || github.event.inputs.splash_image_url || github.event.client_payload.build.splash_site_icon || github.event.client_payload.splash_site_icon || github.event.inputs.splash_site_icon || '' }}
+      SPLASH_SITE_NAME: ${{ fromJSON(inputs.build_payload || '{}').build.splash_site_name || github.event.client_payload.build.splash_site_name || github.event.client_payload.splash_site_name || github.event.inputs.splash_site_name || '' }}
+      SPLASH_BG_COLOR: ${{ fromJSON(inputs.build_payload || '{}').build.splash_bg_color || github.event.client_payload.build.splash_bg_color || github.event.client_payload.splash_bg_color || github.event.inputs.splash_bg_color || '' }}
+      SPLASH_TEXT: ${{ fromJSON(inputs.build_payload || '{}').build.splash_text || github.event.client_payload.build.splash_text || github.event.client_payload.splash_text || github.event.inputs.splash_text || '' }}
+      SPLASH_TEXT_COLOR: ${{ fromJSON(inputs.build_payload || '{}').build.splash_text_color || github.event.client_payload.build.splash_text_color || github.event.client_payload.splash_text_color || github.event.inputs.splash_text_color || '#ffffff' }}
+      SEARCH_SUGGESTIONS: ${{ fromJSON(inputs.build_payload || '{}').build.search_suggestions || github.event.client_payload.build.search_suggestions || github.event.client_payload.search_suggestions || github.event.inputs.search_suggestions || '[]' }}
     steps:
+      - name: Validate Workflow Dispatch Payload
+        env:
+          INPUT_BUILD_PAYLOAD: ${{ inputs.build_payload }}
+          INPUT_CLAIM_KEY: ${{ inputs.claim_key }}
+        run: |
+          python3 -c '
+          import base64, json, os, re, sys
+          source = os.environ.get("INPUT_BUILD_PAYLOAD", "")
+          claim = os.environ.get("INPUT_CLAIM_KEY", "")
+          def reject():
+              print("::error::Invalid build request; configuration details suppressed.")
+              sys.exit(1)
+          if not source:
+              if claim:
+                  reject()
+              sys.exit(0)
+          try:
+              envelope = json.loads(source)
+              if not isinstance(envelope, dict) or set(envelope) != {"build"}:
+                  reject()
+              payload = envelope["build"]
+              fields = {"license_key", "build_format", "render_mode", "app_name", "site_url",
+                        "primary_color", "api_base_url", "keystore_b64", "keystore_pass", "key_alias",
+                        "package_name", "app_icon_url", "app_icon_id", "launcher_icon_url",
+                        "splash_show_logo", "splash_logo_url", "splash_image_url", "splash_site_icon",
+                        "splash_site_name", "splash_bg_color", "splash_text", "splash_text_color",
+                        "search_suggestions", "claim_key"}
+              if not isinstance(payload, dict) or set(payload) != fields:
+                  reject()
+              if not re.fullmatch(r"[a-f0-9]{32}", claim) or payload["claim_key"] != claim:
+                  reject()
+              serialized = json.dumps({"claim_key": claim, "build_payload": source}, ensure_ascii=False, separators=(",", ":"))
+              if len(serialized) > 65535:
+                  reject()
+              for field in fields - {"splash_show_logo", "app_icon_id"}:
+                  if not isinstance(payload[field], str):
+                      reject()
+              if type(payload["splash_show_logo"]) is not bool or type(payload["app_icon_id"]) is not int or payload["app_icon_id"] < 0:
+                  reject()
+              if payload["build_format"] not in {"apk", "aab", "both"} or payload["render_mode"] not in {"native", "webview"}:
+                  reject()
+              for field in {"license_key", "app_name", "site_url", "keystore_b64", "keystore_pass", "key_alias", "package_name"}:
+                  if not payload[field].strip():
+                      reject()
+              if payload["render_mode"] == "native" and not payload["api_base_url"].strip():
+                  reject()
+              signing = base64.b64decode(payload["keystore_b64"], validate=True)
+              if len(signing) < 128 or signing[0] != 0x30:
+                  reject()
+              suggestions = json.loads(payload["search_suggestions"])
+              if not isinstance(suggestions, list) or len(suggestions) > 4 or any(not isinstance(value, str) or len(value) > 256 for value in suggestions):
+                  reject()
+          except (ValueError, TypeError, KeyError):
+              reject()
+          '
+
       - name: 'Security Guard: Verify Build License'
         env:
-          LICENSE_KEY: ${{ github.event.client_payload.build.license_key || github.event.client_payload.license_key || github.event.inputs.license_key }}
+          LICENSE_KEY: ${{ fromJSON(inputs.build_payload || '{}').build.license_key || github.event.client_payload.build.license_key || github.event.client_payload.license_key || github.event.inputs.license_key }}
         run: |
           echo "Verifying build license..."
           if [ -z "$LICENSE_KEY" ]; then
