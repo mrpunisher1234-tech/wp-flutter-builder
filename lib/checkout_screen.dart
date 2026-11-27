@@ -10,6 +10,8 @@ import 'addresses_screen.dart' show Province, UserAddress, latinDigits, normaliz
 import 'bazaar_payment.dart';
 import 'bank_payment.dart';
 import 'cart_screen.dart';
+import 'product_variations.dart';
+import 'commerce_rules.dart';
 import 'main.dart';
 import 'native_mode.dart';
 import 'payment_result_screen.dart';
@@ -158,8 +160,13 @@ class _NativeCheckoutScreenState extends State<NativeCheckoutScreen> {
     /// جمع اقلام با قیمت حراج | همان منطق سبد خرید.
     int get _subtotal => CartManager.instance.totalPrice;
 
-    /// هزینه ارسال از تنظیم ۱۴ | صفر یعنی ارسال رایگان.
-    int get _shipping => widget.config.defaultShippingCost;
+    /// هزینه ارسال از تنظیم ۱۴ | رسیدن به سقف ارسال رایگان، هزینه را صفر میکند.
+    int get _shipping => shippingCost(
+      subtotal: _subtotal,
+      freeShippingEnabled: widget.config.freeShippingBarEnabled,
+      freeShippingThreshold: widget.config.freeShippingThreshold,
+      defaultShippingCost: widget.config.defaultShippingCost,
+    );
 
     int get _total {
       if (_serverTotal != null) return _serverTotal!;
@@ -202,6 +209,8 @@ class _NativeCheckoutScreenState extends State<NativeCheckoutScreen> {
             for (final CartItem cartItem in CartManager.instance.items)
               <String, dynamic>{
                 'product_id': cartItem.item.id,
+                'variation_id': cartItem.variationId,
+                'variation': cartItem.variationAttributes,
                 'quantity': cartItem.quantity,
               },
           ],
@@ -249,7 +258,7 @@ class _NativeCheckoutScreenState extends State<NativeCheckoutScreen> {
       _notice('پرداخت درون‌برنامه‌ای بازار فقط برای سبد تک‌محصولی فعال است | سبد را تک‌کالایی کنید یا از درگاه آنلاین استفاده کنید');
       return;
     }
-    final String sku = items.first.item.sku.trim();
+    final String sku = items.first.sku.trim();
     if (sku.isEmpty) {
       _notice('این محصول SKU ندارد | SKU محصول را در ووکامرس تنظیم کنید');
       return;
@@ -492,7 +501,7 @@ class _NativeCheckoutScreenState extends State<NativeCheckoutScreen> {
   String _cartFingerprint() {
     final StringBuffer buffer = StringBuffer();
     for (final CartItem cartItem in CartManager.instance.items) {
-      buffer.write('${cartItem.item.id}:${cartItem.quantity}|');
+      buffer.write('${variationCartKey(cartItem.item.id, cartItem.variation)}:${cartItem.quantity}|');
     }
     buffer.write('coupon=${_appliedCode ?? ''}');
     buffer.write('|name=${_name.text.trim()}');

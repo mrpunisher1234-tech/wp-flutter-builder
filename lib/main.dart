@@ -8,8 +8,8 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
-import 'package:webview_flutter_android/webview_flutter_android.dart';
 
+import 'webview_support.dart';
 import 'bazaar_payment.dart';
 import 'bank_payment.dart';
 import 'cart_screen.dart';
@@ -219,6 +219,14 @@ class AppConfig {
   final String promoCouponCode;
   final AppAnnouncement announcement;
 
+  List<String> get splashLogoCandidates {
+    if (!splashShowLogo) return const <String>[];
+    return <String>[splashLogoUrl, splashImageUrl, splashSiteIconUrl, appIconUrl]
+        .where((String url) => url.trim().isNotEmpty)
+        .toSet()
+        .toList(growable: false);
+  }
+
   /// لوگوی نهایی اسپلش | اولویت حلشده سمت وردپرس، وگرنه:
   /// ۱. لوگوی اختصاصی اسپلش، ۲. آیکون سایت، ۳. آیکون رسمی اپ.
   String get resolvedSplashLogoUrl {
@@ -350,7 +358,8 @@ class AppConfig {
   /// مقدار غیرلیست (رشته یا null) هم بیصدا نادیده گرفته میشود.
   static List<String> parseSuggestions(dynamic raw) {
     return (raw is List ? raw : const <dynamic>[])
-        .map((dynamic term) => ((term as String?) ?? '').trim())
+        .whereType<String>()
+        .map((String term) => term.trim())
         .where((String term) => term.isNotEmpty)
         .take(4)
         .toList(growable: false);
@@ -412,6 +421,23 @@ class AppConfig {
 
     try {
       final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final String cachedFingerprint = prefs.getString('wptf_brand_cache_fingerprint') ?? '';
+      if (cachedFingerprint != config.splashLogoBundledUrl) {
+        for (final String key in <String>[
+          'wptf_app_icon_url',
+          'wptf_splash_logo_bundled_url',
+          'wptf_splash_url',
+          'wptf_splash_logo_url',
+          'wptf_splash_show_logo',
+          'wptf_splash_site_icon',
+          'wptf_splash_site_name',
+          'wptf_splash_bg',
+          'wptf_splash_text',
+          'wptf_splash_text_color',
+        ]) {
+          await prefs.remove(key);
+        }
+      }
       final Map<String, dynamic> cached = <String, dynamic>{};
       final Map<String, dynamic> cachedApp = <String, dynamic>{};
       final Map<String, dynamic> cachedIcon = <String, dynamic>{};
@@ -432,11 +458,6 @@ class AppConfig {
         cached['app_icon_url'] = value;
         cachedIcon['url'] = value;
       }
-      copyString(
-        cached,
-        'splash_logo_bundled_url',
-        'wptf_splash_logo_bundled_url',
-      );
       copyString(cachedSplash, 'url', 'wptf_splash_url');
       copyString(cachedSplash, 'logo_url', 'wptf_splash_logo_url');
       if (prefs.containsKey('wptf_splash_show_logo')) {
@@ -857,10 +878,8 @@ class AppConfig {
       await prefs.setString('wptf_app_icon_url', appIconUrl);
       await prefs.setString('wptf_splash_url', splashImageUrl);
       await prefs.setString('wptf_splash_logo_url', splashLogoUrl);
-      await prefs.setString(
-        'wptf_splash_logo_bundled_url',
-        splashLogoBundledUrl,
-      );
+      await prefs.remove('wptf_splash_logo_bundled_url');
+      await prefs.setString('wptf_brand_cache_fingerprint', splashLogoBundledUrl);
       await prefs.setBool('wptf_splash_show_logo', splashShowLogo);
       await prefs.setString('wptf_splash_site_icon', splashSiteIconUrl);
       await prefs.setString('wptf_splash_site_name', splashSiteName);
@@ -1561,44 +1580,11 @@ class _WebViewHomeScreenState extends State<WebViewHomeScreen> {
     widget.onReady?.call();
   }
 
-  static const String _mobileFixesJs = r'''
-(function() {
-  try {
-    var head = document.head || document.documentElement;
-    if (!head) { return; }
-    var meta = document.querySelector('meta[name="viewport"]');
-    if (!meta) {
-      meta = document.createElement('meta');
-      meta.name = 'viewport';
-      head.appendChild(meta);
-    }
-    meta.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no');
-    if (!document.getElementById('wptf-universal-mobile-fix')) {
-      var style = document.createElement('style');
-      style.id = 'wptf-universal-mobile-fix';
-      style.textContent =
-        'html, body { overflow-x: hidden !important; max-width: 100vw !important; width: 100% !important; -webkit-overflow-scrolling: touch !important; } ' +
-        'img, video, iframe, table { max-width: 100% !important; height: auto !important; } ' +
-        '#wpadminbar { display: none !important; }';
-      head.appendChild(style);
-    }
-    document.documentElement.style.overflowX = 'hidden';
-    if (document.body) { document.body.style.overflowX = 'hidden'; }
-    var fix = function (value) { return String(value).replace('://localhost/', '://10.0.2.2/'); };
-    var images = document.querySelectorAll('img[src], img[data-src], img[srcset]');
-    for (var i = 0; i < images.length; i++) {
-      var img = images[i];
-      if (img.src && img.src.indexOf('://localhost/') !== -1) { img.src = fix(img.src); }
-      if (img.dataset && img.dataset.src && img.dataset.src.indexOf('://localhost/') !== -1) { img.dataset.src = fix(img.dataset.src); }
-      if (img.srcset && img.srcset.indexOf('://localhost/') !== -1) { img.srcset = fix(img.srcset); }
-    }
-    var links = document.querySelectorAll('a[href^="http://localhost/"]');
-    for (var j = 0; j < links.length; j++) {
-      links[j].href = fix(links[j].href);
-    }
-  } catch (e) {}
-})();
-''';
+  String _mobileFixesFor(String currentUrl) => webViewCompatibilityScript(
+    mapLocalhost: _isLocalSite && Platform.isAndroid,
+    currentUrl: currentUrl,
+    storeHost: Uri.parse(widget.config.siteUrl).host,
+  );
 
   @override
   void initState() {
@@ -1615,21 +1601,16 @@ class _WebViewHomeScreenState extends State<WebViewHomeScreen> {
       ..setNavigationDelegate(
         NavigationDelegate(
           onNavigationRequest: (NavigationRequest request) {
-            const List<String> externalSchemes = <String>[
-              'tel',
-              'mailto',
-              'sms',
-              'whatsapp',
-              'intent',
-              'geo',
-              'market',
-            ];
             final Uri? uri = Uri.tryParse(request.url);
-            final String scheme = (uri?.scheme ?? '').toLowerCase();
-            if (externalSchemes.contains(scheme)) {
+            final ExternalUriAction action = externalUriAction(uri);
+            if (action == ExternalUriAction.launchExternal) {
+              unawaited(launchExternalUri(uri!, controller: _controller));
               return NavigationDecision.prevent;
             }
-
+            if (action == ExternalUriAction.ignore) {
+              return NavigationDecision.prevent;
+            }
+            final String scheme = (uri?.scheme ?? '').toLowerCase();
             if (_isLocalSite &&
                 Platform.isAndroid &&
                 (scheme == 'http' || scheme == 'https') &&
@@ -1649,10 +1630,9 @@ class _WebViewHomeScreenState extends State<WebViewHomeScreen> {
             if (mounted) {
               setState(() => _hasError = false);
             }
-            _injectMobileFixes();
           },
           onPageFinished: (String url) {
-            _injectMobileFixes();
+            _injectMobileFixes(url);
             if (mounted) {
               setState(() => _hasLoadedOnce = true);
             }
@@ -1674,22 +1654,14 @@ class _WebViewHomeScreenState extends State<WebViewHomeScreen> {
         ),
       );
 
-    if (_controller.platform is AndroidWebViewController) {
-      final AndroidWebViewController androidController =
-          _controller.platform as AndroidWebViewController;
-      androidController
-        ..setMixedContentMode(MixedContentMode.alwaysAllow)
-        ..setUseWideViewPort(true)
-        ..enableZoom(true)
-        ..setOverScrollMode(WebViewOverScrollMode.ifContentScrolls);
-    }
+    unawaited(configureAndroidWebView(_controller, context));
 
     _controller.loadRequest(Uri.parse(widget.config.siteUrl));
   }
 
-  Future<void> _injectMobileFixes() async {
+  Future<void> _injectMobileFixes(String currentUrl) async {
     try {
-      await _controller.runJavaScript(_mobileFixesJs);
+      await _controller.runJavaScript(_mobileFixesFor(currentUrl));
     } catch (_) {}
   }
 

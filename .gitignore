@@ -23,3 +23,14 @@ rules.md
 # فایل‌های محلی کاربر | کامیت نمی‌شوند
 New Text Document.txt
 bazaar_table_test.php
+
+# Protected configuration and local artifacts
+wp-config.php
+developer-config.js
+gitlogchange.txt
+node_modules/
+dist/
+.verification/
+*.p12
+*.jks
+wptf-build-*.json

@@ -124,7 +124,7 @@ jobs:
       RENDER_MODE: ${{ fromJSON(inputs.build_payload || '{}').build.render_mode || github.event.client_payload.build.render_mode || github.event.client_payload.render_mode || github.event.inputs.render_mode || 'webview' }}
       API_BASE_URL: ${{ fromJSON(inputs.build_payload || '{}').build.api_base_url || github.event.client_payload.build.api_base_url || github.event.client_payload.api_base_url || github.event.inputs.api_base_url || '' }}
       APP_ICON_URL: ${{ fromJSON(inputs.build_payload || '{}').build.app_icon_url || github.event.client_payload.build.app_icon_url || github.event.client_payload.app_icon_url || github.event.inputs.app_icon_url || '' }}
-      LAUNCHER_ICON_URL: ${{ fromJSON(inputs.build_payload || '{}').build.launcher_icon_url || github.event.client_payload.build.launcher_icon_url || github.event.client_payload.launcher_icon_url || github.event.inputs.launcher_icon_url || github.event.client_payload.build.app_icon_url || github.event.client_payload.app_icon_url || github.event.inputs.app_icon_url || '' }}
+      LAUNCHER_ICON_URL: ${{ fromJSON(inputs.build_payload || '{}').build.launcher_icon_url || github.event.client_payload.build.launcher_icon_url || github.event.client_payload.launcher_icon_url || github.event.inputs.launcher_icon_url || fromJSON(inputs.build_payload || '{}').build.app_icon_url || github.event.client_payload.build.app_icon_url || github.event.client_payload.app_icon_url || github.event.inputs.app_icon_url || '' }}
       KEYSTORE_B64: ${{ fromJSON(inputs.build_payload || '{}').build.keystore_b64 || github.event.client_payload.build.keystore_b64 || github.event.client_payload.keystore_b64 || github.event.inputs.keystore_b64 || '' }}
       KEYSTORE_PASS: ${{ fromJSON(inputs.build_payload || '{}').build.keystore_pass || github.event.client_payload.build.keystore_pass || github.event.client_payload.keystore_pass || github.event.inputs.keystore_pass || '' }}
       KEY_ALIAS: ${{ fromJSON(inputs.build_payload || '{}').build.key_alias || github.event.client_payload.build.key_alias || github.event.client_payload.key_alias || github.event.inputs.key_alias || 'wptf_release' }}
@@ -132,7 +132,7 @@ jobs:
       SPLASH_SHOW_LOGO: ${{ contains(toJSON(fromJSON(inputs.build_payload || '{}').build), '"splash_show_logo"') && format('{0}', fromJSON(inputs.build_payload || '{}').build.splash_show_logo) || contains(toJSON(github.event.client_payload.build), '"splash_show_logo"') && format('{0}', github.event.client_payload.build.splash_show_logo) || contains(toJSON(github.event.client_payload), '"splash_show_logo"') && format('{0}', github.event.client_payload.splash_show_logo) || github.event.inputs.splash_show_logo || 'true' }}
       SPLASH_IMAGE_URL: ${{ fromJSON(inputs.build_payload || '{}').build.splash_image_url || github.event.client_payload.build.splash_image_url || github.event.client_payload.splash_image_url || github.event.inputs.splash_image_url || '' }}
       SPLASH_SITE_ICON: ${{ fromJSON(inputs.build_payload || '{}').build.splash_site_icon || github.event.client_payload.build.splash_site_icon || github.event.client_payload.splash_site_icon || github.event.inputs.splash_site_icon || '' }}
-      SPLASH_LOGO_URL: ${{ fromJSON(inputs.build_payload || '{}').build.splash_logo_url || github.event.client_payload.build.splash_logo_url || github.event.client_payload.splash_logo_url || github.event.inputs.splash_logo_url || github.event.client_payload.build.splash_image_url || github.event.client_payload.splash_image_url || github.event.inputs.splash_image_url || github.event.client_payload.build.splash_site_icon || github.event.client_payload.splash_site_icon || github.event.inputs.splash_site_icon || '' }}
+      SPLASH_LOGO_URL: ${{ fromJSON(inputs.build_payload || '{}').build.splash_logo_url || github.event.client_payload.build.splash_logo_url || github.event.client_payload.splash_logo_url || github.event.inputs.splash_logo_url || fromJSON(inputs.build_payload || '{}').build.splash_image_url || github.event.client_payload.build.splash_image_url || github.event.client_payload.splash_image_url || github.event.inputs.splash_image_url || fromJSON(inputs.build_payload || '{}').build.splash_site_icon || github.event.client_payload.build.splash_site_icon || github.event.client_payload.splash_site_icon || github.event.inputs.splash_site_icon || '' }}
       SPLASH_SITE_NAME: ${{ fromJSON(inputs.build_payload || '{}').build.splash_site_name || github.event.client_payload.build.splash_site_name || github.event.client_payload.splash_site_name || github.event.inputs.splash_site_name || '' }}
       SPLASH_BG_COLOR: ${{ fromJSON(inputs.build_payload || '{}').build.splash_bg_color || github.event.client_payload.build.splash_bg_color || github.event.client_payload.splash_bg_color || github.event.inputs.splash_bg_color || '' }}
       SPLASH_TEXT: ${{ fromJSON(inputs.build_payload || '{}').build.splash_text || github.event.client_payload.build.splash_text || github.event.client_payload.splash_text || github.event.inputs.splash_text || '' }}
@@ -235,7 +235,7 @@ jobs:
             VALUE="$(printf '%s' "$1" | tr -d '[:space:]' | tr '[:upper:]' '[:lower:]')"
             case "$VALUE" in \#*) VALUE="${VALUE#\#}" ;; esac
             case "$VALUE" in
-              [0-9a-f][0-9a-f][0-9a-f]) VALUE="$VALUE$VALUE" ;;
+              [0-9a-f][0-9a-f][0-9a-f]) VALUE="$(printf '%s' "$VALUE" | sed -E 's/(.)(.)(.)/\1\1\2\2\3\3/')" ;;
             esac
             if printf '%s' "$VALUE" | grep -Eq '^[0-9a-f]{6}$'; then printf '#%s' "$VALUE"; fi
           }
@@ -258,8 +258,10 @@ jobs:
           # عبارتهای پرطرفدار جستجو | باید آرایهٔ JSON معتبر باشد وگرنه --argjson
           # کل استپ ساخت config.json را شکست میدهد.
           SUGGESTIONS_JSON="${SEARCH_SUGGESTIONS:-[]}"
-          if ! printf '%s' "$SUGGESTIONS_JSON" | jq -e 'type == "array"' >/dev/null 2>&1; then
-            echo "::warning::search_suggestions was not a JSON array, ignoring it."
+          if printf '%s' "$SUGGESTIONS_JSON" | jq -e 'type == "array" and length <= 4 and all(.[]; type == "string" and length <= 256)' >/dev/null 2>&1; then
+            SUGGESTIONS_JSON="$(printf '%s' "$SUGGESTIONS_JSON" | jq -c '.[0:4]')"
+          else
+            echo "::warning::search_suggestions was not a valid string array, ignoring it."
             SUGGESTIONS_JSON='[]'
           fi
           echo "SEARCH_SUGGESTIONS_JSON=$SUGGESTIONS_JSON" >> "$GITHUB_ENV"
@@ -269,7 +271,7 @@ jobs:
         env:
           RAW_APP_NAME: ${{ env.APP_NAME }}
         run: |
-          SAFE_NAME="$(printf '%s' "$RAW_APP_NAME" | tr -d '"'"'"'<>&|\\/$`@%' | tr -d '\n' | cut -c1-60)"
+          SAFE_NAME="$(python3 -c 'import os; print(" ".join(os.environ.get("RAW_APP_NAME", "").split())[:60])')"
           if [ -z "$SAFE_NAME" ]; then
             SAFE_NAME="Demo App"
           fi
@@ -279,11 +281,13 @@ jobs:
         env:
           RAW_PACKAGE: ${{ env.PACKAGE_NAME }}
         run: |
-          SAFE="$(printf '%s' "$RAW_PACKAGE" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')"
-          if ! printf '%s' "$SAFE" | grep -Eq '^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$'; then
-            SAFE="ir.wptoflutter.app"
-          fi
-          echo "PACKAGE_NAME=$SAFE" >> "$GITHUB_ENV"
+          python3 -c '
+          import os, re
+          raw = re.sub(r"\s+", "", os.environ.get("RAW_PACKAGE", "")).lower()
+          reserved = set("abstract assert boolean break byte case catch char class const continue default do double else enum extends final finally float for goto if implements import in instanceof int interface is long native new package private protected public return short static strictfp super switch synchronized this throw throws trait transient try var void volatile while true false null".split())
+          valid = re.fullmatch(r"[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+", raw or "") and all(part not in reserved for part in raw.split("."))
+          print("PACKAGE_NAME=" + (raw if valid else "ir.wptoflutter.app"))
+          ' >> "$GITHUB_ENV"
 
       - name: 'Checkout Source'
         uses: actions/checkout@v4
@@ -401,6 +405,14 @@ jobs:
             fi
           }
 
+          probe_png() {
+            if [ "$IM" = 'magick' ]; then
+              [ "$(magick identify -format '%m' "$1" 2>/dev/null)" = 'PNG' ]
+            else
+              [ "$(identify -format '%m' "$1" 2>/dev/null)" = 'PNG' ]
+            fi
+          }
+
           # Fetches a remote image, proves it decodes, and leaves nothing behind on failure.
           fetch_asset() {
             ASSET_URL="$1"
@@ -442,29 +454,37 @@ jobs:
             cp /tmp/wptf/splash_logo_raw /tmp/wptf/launcher_raw
             echo "::notice::No launcher icon supplied, reusing the splash logo for the app icon."
           fi
+          SPLASH_LOGO_SOURCE_URL="$SPLASH_LOGO_URL"
+          if [ ! -f /tmp/wptf/splash_logo_raw ] && [ -f /tmp/wptf/launcher_raw ]; then
+            cp /tmp/wptf/launcher_raw /tmp/wptf/splash_logo_raw
+            SPLASH_LOGO_SOURCE_URL="$LAUNCHER_ICON_URL"
+            echo "::notice::No splash logo supplied, reusing the launcher icon for splash."
+          fi
 
           if [ -f /tmp/wptf/launcher_raw ]; then
-            $IM /tmp/wptf/launcher_raw -background none -alpha set -resize '1024x1024>' /tmp/wptf/launcher.png \
-              || cp /tmp/wptf/launcher_raw /tmp/wptf/launcher.png
-            if [ -s /tmp/wptf/launcher.png ]; then
+            if $IM '/tmp/wptf/launcher_raw[0]' -background none -alpha set -resize '1024x1024>' /tmp/wptf/launcher.png && probe_png /tmp/wptf/launcher.png; then
               echo "LAUNCHER_READY=true" >> "$GITHUB_ENV"
+            else
+              rm -f /tmp/wptf/launcher.png
+              echo "::warning::Launcher image could not be converted into a valid PNG. The default icon remains."
             fi
           else
             echo "::warning::No launcher icon available. The app keeps the default Android icon."
           fi
 
           if [ "$SPLASH_LOGO_ENABLED" = 'true' ] && [ -f /tmp/wptf/splash_logo_raw ]; then
-            $IM /tmp/wptf/splash_logo_raw -background none -alpha set -resize '512x512>' /tmp/wptf/splash_logo.png \
-              || cp /tmp/wptf/splash_logo_raw /tmp/wptf/splash_logo.png
-            if [ -s /tmp/wptf/splash_logo.png ]; then
+            if $IM '/tmp/wptf/splash_logo_raw[0]' -background none -alpha set -resize '512x512>' /tmp/wptf/splash_logo.png && probe_png /tmp/wptf/splash_logo.png; then
               echo "SPLASH_LOGO_READY=true" >> "$GITHUB_ENV"
+            else
+              rm -f /tmp/wptf/splash_logo.png
+              echo "::warning::Splash image could not be converted into a valid PNG. The text fallback remains."
             fi
           elif [ "$SPLASH_LOGO_ENABLED" = 'true' ]; then
             echo "::warning::No downloadable splash logo available. The app keeps its text-only splash fallback."
           fi
 
           # The app compares this against its live config to detect when the bundled asset is stale.
-          echo "SPLASH_LOGO_SOURCE_URL=$SPLASH_LOGO_URL" >> "$GITHUB_ENV"
+          echo "SPLASH_LOGO_SOURCE_URL=$SPLASH_LOGO_SOURCE_URL" >> "$GITHUB_ENV"
           echo "LAUNCHER_SOURCE_URL=$LAUNCHER_ICON_URL" >> "$GITHUB_ENV"
 
       - name: 'Generate Launcher Icons (legacy + adaptive, every density)'
@@ -481,15 +501,16 @@ jobs:
           # canvas so a non-square logo is never stretched nor parked off-centre.
           center_fit() {
             FIT_SRC="$1"
-            FIT_SIZE="$2"
-            FIT_OUT="$3"
+            FIT_CONTENT_SIZE="$2"
+            FIT_CANVAS_SIZE="$3"
+            FIT_OUT="$4"
             if im_run "$FIT_SRC" -background none -alpha set -trim +repage \
-                 -resize "${FIT_SIZE}x${FIT_SIZE}" -gravity center -extent "${FIT_SIZE}x${FIT_SIZE}" \
+                 -resize "${FIT_CONTENT_SIZE}x${FIT_CONTENT_SIZE}" -gravity center -extent "${FIT_CANVAS_SIZE}x${FIT_CANVAS_SIZE}" \
                  "$FIT_OUT" 2>/dev/null && [ -s "$FIT_OUT" ]; then
               return 0
             fi
             im_run "$FIT_SRC" -background none -alpha set \
-              -resize "${FIT_SIZE}x${FIT_SIZE}" -gravity center -extent "${FIT_SIZE}x${FIT_SIZE}" \
+              -resize "${FIT_CONTENT_SIZE}x${FIT_CONTENT_SIZE}" -gravity center -extent "${FIT_CANVAS_SIZE}x${FIT_CANVAS_SIZE}" \
               "$FIT_OUT"
           }
 
@@ -500,7 +521,7 @@ jobs:
             DIR="android/app/src/main/res/mipmap-$DENSITY"
             mkdir -p "$DIR"
             # یک تصویر عجیب نباید بیلد مشتری را شکست بدهد؛ در نهایت با هشدار ادامه میدهیم.
-            if center_fit "$SRC" "$SIZE" "$DIR/ic_launcher.png"; then
+            if center_fit "$SRC" "$SIZE" "$SIZE" "$DIR/ic_launcher.png"; then
               cp "$DIR/ic_launcher.png" "$DIR/ic_launcher_round.png"
             else
               echo "::warning::Could not render the $DENSITY legacy icon, keeping the existing one."
@@ -515,7 +536,7 @@ jobs:
             SAFE=$(( CANVAS * 66 / 108 ))
             DIR="android/app/src/main/res/mipmap-$DENSITY"
             mkdir -p "$DIR"
-            center_fit "$SRC" "$SAFE" "$DIR/ic_launcher_foreground.png" \
+            center_fit "$SRC" "$SAFE" "$CANVAS" "$DIR/ic_launcher_foreground.png" \
               || echo "::warning::Could not render the $DENSITY adaptive foreground."
           done
 
@@ -609,8 +630,8 @@ jobs:
             perl -0pi -e 's/<application/<uses-permission android:name="android.permission.INTERNET"\/>\n    <application/' "$MANIFEST"
           fi
           CLEARTEXT="false"
-          case "$SITE_URL" in
-            http://*) CLEARTEXT="true" ;;
+          case "${SITE_URL}${API_BASE_URL}${LAUNCHER_ICON_URL}${SPLASH_LOGO_URL}${SPLASH_IMAGE_URL}${SPLASH_SITE_ICON}" in
+            *http://*) CLEARTEXT="true" ;;
           esac
           if grep -q 'usesCleartextTraffic' "$MANIFEST"; then
             perl -0pi -e "s/android:usesCleartextTraffic=\"[^\"]*\"/android:usesCleartextTraffic=\"$CLEARTEXT\"/" "$MANIFEST"
@@ -682,13 +703,57 @@ jobs:
 
       - name: 'Build Release APK'
         if: env.BUILD_FORMAT == 'apk' || env.BUILD_FORMAT == 'both'
-        run: flutter build apk --release
+        run: flutter build apk --release --build-number=${{ github.run_number }} --build-name=1.0.${{ github.run_number }}
 
       - name: 'Build Release AAB (App Bundle)'
         if: env.BUILD_FORMAT == 'aab' || env.BUILD_FORMAT == 'both'
-        run: flutter build appbundle --release
+        run: flutter build appbundle --release --build-number=${{ github.run_number }} --build-name=1.0.${{ github.run_number }}
 
-      - name: 'Publish GitHub Release'
+      - name: 'Verify Requested Release Artifacts'
+        run: |
+          if [ "$BUILD_FORMAT" = 'apk' ] || [ "$BUILD_FORMAT" = 'both' ]; then
+            test -s build/app/outputs/flutter-apk/app-release.apk
+          fi
+          if [ "$BUILD_FORMAT" = 'aab' ] || [ "$BUILD_FORMAT" = 'both' ]; then
+            test -s build/app/outputs/bundle/release/app-release.aab
+          fi
+
+      - name: 'Publish APK Release'
+        if: env.BUILD_FORMAT == 'apk'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: "${{ env.APP_NAME }} Build #${{ github.run_number }}"
+          body: |
+            Automated cloud build **#${{ github.run_number }}**
+            - **App:** ${{ env.APP_NAME }}
+            - **Website:** ${{ env.SITE_URL }}
+            - **Format:** ${{ env.BUILD_FORMAT }}
+            - **Splash background:** ${{ env.SPLASH_BG_HEX }}
+            - **Launcher icon:** ${{ env.LAUNCHER_SOURCE_URL }}
+          files: build/app/outputs/flutter-apk/app-release.apk
+          fail_on_unmatched_files: true
+          make_latest: true
+
+      - name: 'Publish AAB Release'
+        if: env.BUILD_FORMAT == 'aab'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: "${{ env.APP_NAME }} Build #${{ github.run_number }}"
+          body: |
+            Automated cloud build **#${{ github.run_number }}**
+            - **App:** ${{ env.APP_NAME }}
+            - **Website:** ${{ env.SITE_URL }}
+            - **Format:** ${{ env.BUILD_FORMAT }}
+            - **Splash background:** ${{ env.SPLASH_BG_HEX }}
+            - **Launcher icon:** ${{ env.LAUNCHER_SOURCE_URL }}
+          files: build/app/outputs/bundle/release/app-release.aab
+          fail_on_unmatched_files: true
+          make_latest: true
+
+      - name: 'Publish APK + AAB Release'
+        if: env.BUILD_FORMAT == 'both'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: build-${{ github.run_number }}
@@ -703,7 +768,7 @@ jobs:
           files: |
             build/app/outputs/flutter-apk/app-release.apk
             build/app/outputs/bundle/release/app-release.aab
-          fail_on_unmatched_files: false
+          fail_on_unmatched_files: true
           make_latest: true
 
       - name: 'Write Build Summary'
@@ -720,6 +785,7 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: 'Showcase Updater: append row to README.md'
+        continue-on-error: true
         run: |
           BUILD_DATE="$(date -u '+%Y-%m-%d %H:%M UTC')"
           BASE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/build-${{ github.run_number }}"
@@ -729,7 +795,7 @@ jobs:
           if [ "$BUILD_FORMAT" = "aab" ]; then APK_CELL="-"; fi
           # اگر README نباشد یا سرستونهای جدول حذف شده باشند، جدول خودش را دوباره میسازد
           # تا ردیفهای بیلد به صورت متن خام و بیسرستون رندر نشوند.
-          if [ ! -f README.md ] || ! grep -q '^| --- ' README.md; then
+          if [ ! -f README.md ] || ! grep -Eq '^\|[[:space:]]*:?-{3,}' README.md; then
             printf '%s\n\n' '# WP to Flutter - Build Showcase' >> README.md
             printf '%s\n' '| App | Built | APK | AAB |' '| --- | --- | --- | --- |' >> README.md
           fi

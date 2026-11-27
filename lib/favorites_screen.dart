@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'main.dart';
 import 'native_mode.dart';
+import 'product_variations.dart';
 
 /// کارت ۱۸ | علاقه‌مندی‌ها | کاملاً محلی روی دستگاه کاربر (SharedPreferences)
 /// بدون هیچ اندپوینت یا جدول تازهٔ وردپرس | مدیریتش هم‌سبک CartManager است
@@ -169,6 +170,8 @@ Map<String, dynamic> wpItemSnapshot(WpItem item) => <String, dynamic>{
       'content': item.content,
       'url': item.url,
       'featured_image': item.featuredImage,
+      'product_type': item.productType,
+      'variations': item.variations.map((WpVariation variation) => variation.toMap()).toList(growable: false),
       'price': item.price,
       'regular_price': item.regularPrice,
       'sale_price': item.salePrice,
@@ -185,7 +188,9 @@ Map<String, dynamic> wpItemSnapshot(WpItem item) => <String, dynamic>{
             (WpAttribute attribute) => <String, dynamic>{
               'name': attribute.name,
               'slug': attribute.slug,
-              'options': attribute.options,
+              'options': attribute.options
+                  .map((WpAttributeOption option) => <String, dynamic>{'name': option.name, 'value': option.value})
+                  .toList(growable: false),
               'variation': attribute.variation,
             },
           )
@@ -207,6 +212,13 @@ WpItem wpItemFromSnapshot(Map<String, dynamic> map) => WpItem(
       content: '${map['content'] ?? ''}',
       url: '${map['url'] ?? ''}',
       featuredImage: '${map['featured_image'] ?? ''}',
+      productType: '${map['product_type'] ?? 'simple'}',
+      variations: (map['variations'] is List
+              ? map['variations'] as List
+              : const <dynamic>[])
+          .whereType<Map>()
+          .map((Map row) => WpVariation.fromMap(row.cast<String, dynamic>()))
+          .toList(growable: false),
       price: '${map['price'] ?? ''}',
       regularPrice: '${map['regular_price'] ?? ''}',
       salePrice: '${map['sale_price'] ?? ''}',
@@ -234,7 +246,7 @@ WpItem wpItemFromSnapshot(Map<String, dynamic> map) => WpItem(
               options: (row['options'] is List
                       ? row['options'] as List
                       : const <dynamic>[])
-                  .map((dynamic option) => '$option')
+                  .map(WpAttributeOption.fromMap)
                   .toList(growable: false),
               variation: row['variation'] == true,
             ),

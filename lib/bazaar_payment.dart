@@ -525,7 +525,8 @@ class BazaarPayments {
           .join()
           .timeout(const Duration(seconds: 10));
       if (response.statusCode != 200) {
-        return const _VerifyOutcome(credited: false, retryable: true);
+        final bool permanent = <int>{400, 401, 403, 404, 410, 422}.contains(response.statusCode);
+        return _VerifyOutcome(credited: false, retryable: !permanent);
       }
       final Object? decoded = jsonDecode(body);
       final bool success =

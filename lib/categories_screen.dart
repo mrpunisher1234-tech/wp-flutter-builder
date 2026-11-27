@@ -57,6 +57,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
   bool _hasMore = true;
   bool _refreshing = false;
   String? _error;
+  String? _pageError;
 
   @override
   void initState() {
@@ -172,6 +173,7 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
 
         if (!mounted) return;
         setState(() {
+          _pageError = null;
           if (list.isEmpty) {
             _hasMore = false;
           } else {
@@ -187,14 +189,14 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
         if (!mounted) return;
         setState(() {
           _isLoadingMore = false;
-          _hasMore = false;
+          _pageError = 'دریافت صفحه بعدی انجام نشد. دوباره تلاش کنید.';
         });
       }
     } catch (_) {
       if (!mounted) return;
       setState(() {
         _isLoadingMore = false;
-        _hasMore = false;
+        _pageError = 'ارتباط برای دریافت صفحه بعدی برقرار نشد.';
       });
     }
   }
@@ -271,6 +273,24 @@ class _CategoriesScreenState extends State<CategoriesScreen> {
               ),
             ),
           ),
+          if (_pageError != null)
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                child: Column(
+                  children: <Widget>[
+                    Text(_pageError!, style: const TextStyle(color: Dk.discount, fontSize: 12)),
+                    TextButton(
+                      onPressed: () {
+                        setState(() => _pageError = null);
+                        _fetchMoreCategories();
+                      },
+                      child: const Text('تلاش مجدد صفحه بعدی'),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           if (_isLoadingMore)
             const SliverToBoxAdapter(
               child: Padding(
@@ -453,6 +473,7 @@ class _CategoryProductsScreenState extends State<CategoryProductsScreen> {
   bool _loadingMore = false;
   bool _hasMore = false;
   String? _error;
+  String? _pageError;
 
   // تنظیم ۲۳ | وضعیت مرتب‌سازی/فیلتر | با تغییر، فهرست از صفحهٔ ۱ ریست میشود.
   String _sort = 'newest';
@@ -514,7 +535,7 @@ class _CategoryProductsScreenState extends State<CategoryProductsScreen> {
     if (fetched == null) {
       setState(() {
         _loadingMore = false;
-        _hasMore = false;
+        _pageError = 'دریافت صفحه بعدی انجام نشد. دوباره تلاش کنید.';
       });
       return;
     }
@@ -522,6 +543,7 @@ class _CategoryProductsScreenState extends State<CategoryProductsScreen> {
       _items = <WpItem>[..._items, ...fetched];
       _page++;
       _loadingMore = false;
+      _pageError = null;
     });
     WidgetsBinding.instance.addPostFrameCallback((_) => _autoFillViewport());
   }
@@ -550,7 +572,11 @@ class _CategoryProductsScreenState extends State<CategoryProductsScreen> {
 
       if (response.statusCode != 200) {
         setState(() {
-          _error = 'خطا در بارگذاری محصولات';
+          if (_items.isEmpty) {
+            _error = 'خطا در بارگذاری محصولات';
+          } else {
+            _pageError = 'خطا در بارگذاری صفحه بعدی محصولات';
+          }
           _loading = false;
         });
         return null;
@@ -568,7 +594,11 @@ class _CategoryProductsScreenState extends State<CategoryProductsScreen> {
     } catch (_) {
       if (!mounted || seq != _fetchSeq) return null;
       setState(() {
-        _error = 'خطا در اتصال به اینترنت';
+        if (_items.isEmpty) {
+          _error = 'خطا در اتصال به اینترنت';
+        } else {
+          _pageError = 'ارتباط برای دریافت صفحه بعدی برقرار نشد';
+        }
         _loading = false;
       });
       return null;
@@ -674,6 +704,22 @@ class _CategoryProductsScreenState extends State<CategoryProductsScreen> {
                                   ),
                                 ),
                                 // لودر اسکرول بی‌نهایت | زیر گرید، وسط صفحه
+                                if (_pageError != null)
+                                  Padding(
+                                    padding: const EdgeInsets.symmetric(vertical: 10),
+                                    child: Column(
+                                      children: <Widget>[
+                                        Text(_pageError!, style: const TextStyle(color: Dk.discount, fontSize: 12)),
+                                        TextButton(
+                                          onPressed: () {
+                                            setState(() => _pageError = null);
+                                            _loadMore();
+                                          },
+                                          child: const Text('تلاش مجدد صفحه بعدی'),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
                                 if (_loadingMore)
                                   const Padding(
                                     padding: EdgeInsets.symmetric(vertical: 16),

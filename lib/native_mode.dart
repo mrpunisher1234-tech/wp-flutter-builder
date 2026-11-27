@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
+import 'webview_support.dart';
 import 'cart_screen.dart';
 import 'categories_screen.dart';
 import 'api_page.dart';
@@ -16,6 +17,7 @@ import 'announcement.dart';
 import 'favorites_screen.dart';
 import 'main.dart';
 import 'product_reviews.dart';
+import 'product_variations.dart';
 import 'profile_screen.dart';
 import 'recently_viewed.dart';
 import 'search_history.dart';
@@ -582,7 +584,7 @@ class WpAttribute {
 
   final String name;
   final String slug;
-  final List<String> options;
+  final List<WpAttributeOption> options;
   final bool variation;
 }
 
@@ -596,6 +598,8 @@ class WpItem {
     required this.content,
     required this.url,
     required this.featuredImage,
+    this.productType = 'simple',
+    this.variations = const <WpVariation>[],
     this.price = '',
     this.regularPrice = '',
     this.salePrice = '',
@@ -620,6 +624,8 @@ class WpItem {
   final String content;
   final String url;
   final String featuredImage;
+  final String productType;
+  final List<WpVariation> variations;
   final String price;
   final String regularPrice;
   final String salePrice;
@@ -639,6 +645,7 @@ class WpItem {
   final List<String> categorySlugs;
 
   bool get isProduct => type == 'product';
+  bool get isVariable => isProduct && productType == 'variable';
 
   factory WpItem.fromMap(Map<String, dynamic> map) {
     final Map<String, dynamic> product = map['product'] is Map<String, dynamic>
@@ -650,6 +657,7 @@ class WpItem {
     final Object? rawGalleryImages = product['gallery_images'];
     final Object? rawAttributes = product['attributes'];
     final Object? rawRelatedProducts = product['related_products'];
+    final Object? rawVariations = product['variations'];
 
     return WpItem(
       id: (map['id'] as num?)?.toInt() ?? 0,
@@ -661,6 +669,14 @@ class WpItem {
       featuredImage: AppConfig.mapEmulatorUrl(
         ((map['featured_image'] as String?) ?? '').trim(),
       ),
+      productType: (product['product_type'] as String?) ?? 'simple',
+      variations: (rawVariations is List ? rawVariations : const <dynamic>[])
+          .whereType<Map<String, dynamic>>()
+          .map((Map<String, dynamic> variation) => WpVariation.fromMap(
+                variation,
+                mapUrl: AppConfig.mapEmulatorUrl,
+              ))
+          .toList(growable: false),
       price: (product['price'] as String?) ?? '',
       regularPrice: (product['regular_price'] as String?) ?? '',
       salePrice: (product['sale_price'] as String?) ?? '',
@@ -692,7 +708,8 @@ class WpItem {
                     slug: (attribute['slug'] as String?) ?? '',
                     options:
                         (rawOptions is List ? rawOptions : const <dynamic>[])
-                            .whereType<String>()
+                            .map(WpAttributeOption.fromMap)
+                            .where((WpAttributeOption option) => option.name.isNotEmpty && option.value.isNotEmpty)
                             .toList(growable: false),
                     variation: attribute['variation'] == true,
                   );
@@ -853,6 +870,7 @@ class _NativeHomeScreenState extends State<NativeHomeScreen> {
   int _productsPage = 1;
   bool _hasMoreProducts = false;
   bool _loadingMoreProducts = false;
+  String? _productsPageError;
 
   static const int _homePageSize = 10;
 
@@ -863,6 +881,7 @@ class _NativeHomeScreenState extends State<NativeHomeScreen> {
   bool _hasMoreCategoryItems = false;
   bool _loadingCategoryItems = false;
   bool _loadingMoreCategoryItems = false;
+  String? _categoryPageError;
 
   @override
   void initState() {
@@ -923,6 +942,7 @@ class _NativeHomeScreenState extends State<NativeHomeScreen> {
           _items = loadMore ? <WpItem>[..._items, ...fetched] : fetched;
           _productsPage = page;
           _hasMoreProducts = response.hasNextPage(page);
+          _productsPageError = null;
           _isLoading = false;
           _loadingMoreProducts = false;
         });
@@ -930,10 +950,10 @@ class _NativeHomeScreenState extends State<NativeHomeScreen> {
           (_) => _autoFillViewport(),
         );
       } else if (loadMore) {
-        // خطای صفحه‌بندی: بی‌سروصدا متوقف می‌شود | محتوای موجود می‌ماند
+        // خطای صفحه‌بندی: محتوا و امکان تلاش مجدد حفظ می‌شود.
         setState(() {
           _loadingMoreProducts = false;
-          _hasMoreProducts = false;
+          _productsPageError = 'دریافت صفحه بعدی انجام نشد. دوباره تلاش کنید.';
         });
       } else {
         setState(() {
@@ -946,7 +966,7 @@ class _NativeHomeScreenState extends State<NativeHomeScreen> {
       if (loadMore) {
         setState(() {
           _loadingMoreProducts = false;
-          _hasMoreProducts = false;
+          _productsPageError = 'ارتباط برای دریافت صفحه بعدی برقرار نشد.';
         });
       } else {
         setState(() {
@@ -1103,7 +1123,7 @@ class _NativeHomeScreenState extends State<NativeHomeScreen> {
         setState(() {
           _loadingCategoryItems = false;
           _loadingMoreCategoryItems = false;
-          _hasMoreCategoryItems = false;
+          _categoryPageError = 'دریافت صفحه بعدی این دسته انجام نشد.';
         });
         return;
       }
@@ -1120,6 +1140,7 @@ class _NativeHomeScreenState extends State<NativeHomeScreen> {
             : fetched;
         _categoryPage = page;
         _hasMoreCategoryItems = response.hasNextPage(page);
+        _categoryPageError = null;
         _loadingCategoryItems = false;
         _loadingMoreCategoryItems = false;
       });
@@ -1129,7 +1150,7 @@ class _NativeHomeScreenState extends State<NativeHomeScreen> {
       setState(() {
         _loadingCategoryItems = false;
         _loadingMoreCategoryItems = false;
-        if (loadMore) _hasMoreCategoryItems = false;
+        if (loadMore) _categoryPageError = 'ارتباط برای دریافت صفحه بعدی این دسته برقرار نشد.';
       });
     }
   }
@@ -1427,6 +1448,30 @@ class _NativeHomeScreenState extends State<NativeHomeScreen> {
                     child: _buildProductArea(displayedItems),
                   ),
 
+                  if ((_selectedCategory == 'همه' ? _productsPageError : _categoryPageError) != null)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 10),
+                      child: Column(
+                        children: <Widget>[
+                          Text(
+                            (_selectedCategory == 'همه' ? _productsPageError : _categoryPageError)!,
+                            style: const TextStyle(color: Dk.discount, fontSize: 12),
+                          ),
+                          TextButton(
+                            onPressed: () {
+                              if (_selectedCategory == 'همه') {
+                                setState(() => _productsPageError = null);
+                                _fetchProducts(loadMore: true);
+                              } else {
+                                setState(() => _categoryPageError = null);
+                                _fetchCategoryItems(loadMore: true);
+                              }
+                            },
+                            child: const Text('تلاش مجدد صفحه بعدی'),
+                          ),
+                        ],
+                      ),
+                    ),
                   // اسکرول بی‌نهایت | لودر صفحه‌ی بعدی (متناسب با حالت)
                   if (_selectedCategory == 'همه'
                       ? _loadingMoreProducts
@@ -2381,6 +2426,18 @@ class ProductGridCard extends StatelessWidget {
                         ListenableBuilder(
                           listenable: CartManager.instance,
                           builder: (BuildContext context, Widget? child) {
+                            if (item.isVariable) {
+                              return SizedBox(
+                                height: 26,
+                                child: InkWell(
+                                  onTap: () {
+                                    FavoritesManager.instance.refreshSnapshot(item);
+                                    onTap();
+                                  },
+                                  child: const Icon(Icons.tune_rounded, color: Color(0xFF424750), size: 22),
+                                ),
+                              );
+                            }
                             final CartItem? cartItem = CartManager
                                 .instance
                                 .items
@@ -2532,6 +2589,7 @@ class _NativeSearchScreenState extends State<NativeSearchScreen> {
   List<WpItem>? _results;
   bool _searching = false;
   String? _error;
+  String? _pageError;
 
   // تنظیم ۲۳ | وضعیت مرتب‌سازی/فیلتر | با تغییر، جستجو از صفحهٔ ۱ ریست میشود.
   String _sort = 'newest';
@@ -2642,7 +2700,7 @@ class _NativeSearchScreenState extends State<NativeSearchScreen> {
       if (seq == _searchSeq) {
         setState(() {
           _loadingMoreResults = false;
-          _hasMoreResults = false; // خطا: تلاش مجدد خودکار متوقف می‌شود
+          _pageError = 'دریافت صفحه بعدی نتایج انجام نشد. دوباره تلاش کنید.';
         });
       }
       return;
@@ -2652,6 +2710,7 @@ class _NativeSearchScreenState extends State<NativeSearchScreen> {
       _results = <WpItem>[...?_results, ...fetched];
       _resultsPage++;
       _loadingMoreResults = false;
+      _pageError = null;
     });
   }
 
@@ -2907,6 +2966,22 @@ class _NativeSearchScreenState extends State<NativeSearchScreen> {
           ),
         ),
         // لودر اسکرول بی‌نهایت | زیر گرید، وسط صفحه
+        if (_pageError != null)
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 10),
+            child: Column(
+              children: <Widget>[
+                Text(_pageError!, style: const TextStyle(color: Dk.discount, fontSize: 12)),
+                TextButton(
+                  onPressed: () {
+                    setState(() => _pageError = null);
+                    _loadMoreResults();
+                  },
+                  child: const Text('تلاش مجدد صفحه بعدی'),
+                ),
+              ],
+            ),
+          ),
         if (_loadingMoreResults)
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 16),
@@ -3164,7 +3239,7 @@ Future<void> _launchInquiry(
   );
 }
 
-class NativeDetailScreen extends StatelessWidget {
+class NativeDetailScreen extends StatefulWidget {
   final WpItem item;
   final AppConfig config;
   final VoidCallback? onGoToLogin;
@@ -3177,17 +3252,122 @@ class NativeDetailScreen extends StatelessWidget {
   });
 
   @override
+  State<NativeDetailScreen> createState() => _NativeDetailScreenState();
+}
+
+class _NativeDetailScreenState extends State<NativeDetailScreen> {
+  WpVariation? _selectedVariation;
+  final Map<String, String> _selectedAttributes = <String, String>{};
+
+  WpItem get item => widget.item;
+  AppConfig get config => widget.config;
+
+  List<WpAttribute> get _variationAttributes => item.attributes
+      .where((WpAttribute attribute) => attribute.variation)
+      .toList(growable: false);
+
+  bool get _canAddSelected => item.purchasable &&
+      (!item.isVariable || (_selectedVariation?.inStock == true && _selectedVariation?.purchasable == true));
+
+  @override
+  void initState() {
+    super.initState();
+    if (item.isVariable && (item.variations.length == 1 || _variationAttributes.isEmpty)) {
+      _selectedVariation = _findMatchingVariation();
+    }
+  }
+
+  WpVariation? _findMatchingVariation() {
+    if (_selectedAttributes.length < _variationAttributes.length) return null;
+    WpVariation? unavailable;
+    for (final WpVariation variation in item.variations) {
+      bool matches = true;
+      for (final MapEntry<String, String> selected in _selectedAttributes.entries) {
+        final String? actual = variation.attributes[selected.key];
+        if (actual != null && actual.isNotEmpty && actual != selected.value) {
+          matches = false;
+          break;
+        }
+      }
+      if (!matches) continue;
+      if (variation.inStock && variation.purchasable) return variation;
+      unavailable ??= variation;
+    }
+    return unavailable;
+  }
+
+  void _selectAttribute(WpAttribute attribute, String value) {
+    setState(() {
+      _selectedAttributes[attribute.slug] = value;
+      _selectedVariation = _findMatchingVariation();
+    });
+  }
+
+  List<Widget> _buildVariationSelectors() {
+    if (!item.isVariable) return const <Widget>[];
+    return <Widget>[
+      const SizedBox(height: 14),
+      for (final WpAttribute attribute in _variationAttributes)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: DropdownButtonFormField<String>(
+            initialValue: _selectedAttributes[attribute.slug],
+            decoration: InputDecoration(
+              labelText: attribute.name,
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            ),
+            hint: Text('انتخاب ${attribute.name}'),
+            items: attribute.options
+                .map((WpAttributeOption option) => DropdownMenuItem<String>(
+                      value: option.value,
+                      child: Text(option.name),
+                    ))
+                .toList(growable: false),
+            onChanged: (String? value) {
+              if (value != null) _selectAttribute(attribute, value);
+            },
+          ),
+        ),
+      if (_selectedVariation != null)
+        Container(
+          margin: const EdgeInsets.only(bottom: 10),
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: _selectedVariation!.inStock ? Dk.success.withValues(alpha: 0.08) : Dk.discount.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Text(
+            _selectedVariation!.inStock ? 'گزینه انتخاب‌شده آماده خرید است' : 'این گزینه ناموجود است',
+            style: TextStyle(
+              color: _selectedVariation!.inStock ? Dk.success : Dk.discount,
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+    ];
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final String displayPrice = _selectedVariation?.price ?? item.price;
+    final String displayRegularPrice = _selectedVariation?.regularPrice ?? item.regularPrice;
+    final String displaySalePrice = _selectedVariation?.salePrice ?? item.salePrice;
+    final bool displayInStock = _selectedVariation?.inStock ?? item.inStock;
+    final int? displayStockQuantity = _selectedVariation?.stockQuantity ?? item.stockQuantity;
+    final String displaySku = _selectedVariation?.sku ?? item.sku;
     final String? discount = calcDiscountPercent(
-      item.regularPrice,
-      item.salePrice,
+      displayRegularPrice,
+      displaySalePrice,
     );
-    final bool hasSale = item.onSale && item.salePrice.isNotEmpty;
-    final List<String> gallery = item.galleryImages.isNotEmpty
-        ? item.galleryImages
-        : (item.featuredImage.isNotEmpty
-              ? <String>[item.featuredImage]
-              : <String>[]);
+    final bool hasSale = (_selectedVariation?.onSale ?? item.onSale) && displaySalePrice.isNotEmpty;
+    final List<String> gallery = List<String>.unmodifiable(<String>{
+      if (_selectedVariation?.image.isNotEmpty == true) _selectedVariation!.image,
+      ...(item.galleryImages.isNotEmpty
+          ? item.galleryImages
+          : (item.featuredImage.isNotEmpty ? <String>[item.featuredImage] : <String>[])),
+    });
 
     // تنظیم ۲۱ | ثبت بازدید | رکورد بعد از فریم اول انجام میشود تا
     // notifyListeners هرگز داخل build نیفتد | تغییر item هم پوشش دارد.
@@ -3399,7 +3579,7 @@ class NativeDetailScreen extends StatelessWidget {
                         ),
 
                       // قیمت در صفحه جزئیات
-                      if (item.price.isNotEmpty) ...<Widget>[
+                      if (displayPrice.isNotEmpty) ...<Widget>[
                         const SizedBox(height: 12),
                         Container(
                           padding: const EdgeInsets.all(12),
@@ -3442,7 +3622,7 @@ class NativeDetailScreen extends StatelessWidget {
                                         ),
                                         const SizedBox(width: 6),
                                         Text(
-                                          formatToman(item.regularPrice),
+                                          formatToman(displayRegularPrice),
                                           style: const TextStyle(
                                             fontSize: 11,
                                             color: Dk.text4,
@@ -3455,7 +3635,7 @@ class NativeDetailScreen extends StatelessWidget {
                                   const SizedBox(height: 2),
                                   Text(
                                     formatToman(
-                                      hasSale ? item.salePrice : item.price,
+                                      hasSale ? displaySalePrice : displayPrice,
                                     ),
                                     style: TextStyle(
                                       fontSize: 16,
@@ -3473,7 +3653,7 @@ class NativeDetailScreen extends StatelessWidget {
                       // وضعیت انبار
                       if (item.isProduct) ...<Widget>[
                         const SizedBox(height: 10),
-                        if (!item.inStock) ...<Widget>[
+                        if (!displayInStock) ...<Widget>[
                           _StockBadge(
                             text: 'ناموجود',
                             color: const Color(0xFFD63638),
@@ -3487,19 +3667,19 @@ class NativeDetailScreen extends StatelessWidget {
                                 config: config,
                               ),
                             ),
-                        ] else if (item.stockQuantity != null &&
-                            item.stockQuantity! > 0 &&
-                            item.stockQuantity! <= 5)
+                        ] else if (displayStockQuantity != null &&
+                            displayStockQuantity > 0 &&
+                            displayStockQuantity <= 5)
                           _StockBadge(
                             text:
-                                'تنها ${item.stockQuantity} عدد در انبار باقیست!',
+                                'تنها $displayStockQuantity عدد در انبار باقیست!',
                             color: const Color(0xFF996800),
                           ),
-                        if (item.sku.isNotEmpty)
+                        if (displaySku.isNotEmpty)
                           Padding(
                             padding: const EdgeInsets.only(top: 6),
                             child: Text(
-                              'کد محصول: ${item.sku}',
+                              'کد محصول: $displaySku',
                               style: const TextStyle(
                                 fontSize: 12,
                                 color: Dk.text3,
@@ -3556,6 +3736,8 @@ class NativeDetailScreen extends StatelessWidget {
                           ),
                         ),
 
+                      ..._buildVariationSelectors(),
+
                       // ویژگی‌های محصول
                       if (item.attributes.isNotEmpty) ...<Widget>[
                         const SizedBox(height: 14),
@@ -3575,7 +3757,7 @@ class NativeDetailScreen extends StatelessWidget {
                                 ),
                                 Expanded(
                                   child: Text(
-                                    attribute.options.join('، '),
+                                    attribute.options.map((WpAttributeOption option) => option.name).join('، '),
                                     style: const TextStyle(
                                       fontSize: 13,
                                       height: 1.8,
@@ -3625,7 +3807,7 @@ class NativeDetailScreen extends StatelessWidget {
                         item: item,
                         config: config,
                         requireLogin: config.reviewsRequireLogin,
-                        onGoToLogin: onGoToLogin,
+                        onGoToLogin: widget.onGoToLogin,
                       ),
                     ],
                   ),
@@ -3655,9 +3837,9 @@ class NativeDetailScreen extends StatelessWidget {
                   borderRadius: BorderRadius.circular(8),
                 ),
               ),
-              onPressed: item.purchasable
+              onPressed: _canAddSelected
                   ? () {
-                      CartManager.instance.addItem(item);
+                      CartManager.instance.addItem(item, variation: _selectedVariation);
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
                           content: Text('کالا به سبد خرید اضافه شد'),
@@ -3667,7 +3849,9 @@ class NativeDetailScreen extends StatelessWidget {
                     }
                   : null,
               child: Text(
-                item.purchasable ? 'افزودن به سبد خرید' : 'خرید در دسترس نیست',
+                item.isVariable && _selectedVariation == null
+                    ? 'ابتدا گزینه‌ها را انتخاب کنید'
+                    : (_canAddSelected ? 'افزودن به سبد خرید' : 'خرید در دسترس نیست'),
                 style: const TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.bold,
@@ -4832,30 +5016,16 @@ class _NativeWebViewScreenState extends State<NativeWebViewScreen> {
 
   /// اصلاحات موبایل برای صفحات باز شده در وبویو (نشان اعتماد، تبلیغ، پرداخت):
   /// متا ویوپورت + هیچ تصویری نباید از عرض صفحه بیرون بزند + پدینگ چپ/راست بدنه.
-  static const String _mobileFixesJs = r'''
-(function() {
-  try {
-    var head = document.head || document.documentElement;
-    if (!head) { return; }
-    var meta = document.querySelector('meta[name="viewport"]');
-    if (!meta) {
-      meta = document.createElement('meta');
-      meta.name = 'viewport';
-      head.appendChild(meta);
-    }
-    meta.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no');
-    if (!document.getElementById('wptf-webview-fix')) {
-      var style = document.createElement('style');
-      style.id = 'wptf-webview-fix';
-      style.textContent =
-        'html, body { overflow-x: hidden !important; max-width: 100vw !important; } ' +
-        'img, video, iframe, table { max-width: 100% !important; height: auto !important; } ' +
-        'body { padding-left: 8px !important; padding-right: 8px !important; box-sizing: border-box !important; }';
-      head.appendChild(style);
-    }
-  } catch (e) {}
-})();
-''';
+  bool get _isLocalSite {
+    final String host = (Uri.tryParse(AppConfig.mapEmulatorUrl(widget.url))?.host ?? '').toLowerCase();
+    return host == 'localhost' || host == '127.0.0.1' || host == '10.0.2.2';
+  }
+
+  String _mobileFixesFor(String currentUrl) => webViewCompatibilityScript(
+    mapLocalhost: _isLocalSite && Platform.isAndroid,
+    currentUrl: currentUrl,
+    storeHost: Uri.parse(widget.url).host,
+  );
 
   @override
   void initState() {
@@ -4864,32 +5034,20 @@ class _NativeWebViewScreenState extends State<NativeWebViewScreen> {
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setNavigationDelegate(
         NavigationDelegate(
-          onPageStarted: (String url) {
-            _applyMobileFixes();
-          },
           onPageFinished: (String url) {
-            _applyMobileFixes();
+            _applyMobileFixes(url);
           },
           onNavigationRequest: (NavigationRequest request) {
-            // اسکیمهای بومی درون وبویو کرش میکنند | به سیستم واگذار میشوند.
             final Uri? uri = Uri.tryParse(request.url);
-            final String scheme = (uri?.scheme ?? '').toLowerCase();
-            const List<String> externalSchemes = <String>[
-              'tel',
-              'mailto',
-              'sms',
-              'whatsapp',
-              'intent',
-              'geo',
-              'market',
-              'tg',
-              'instagram',
-              'telegram',
-              'eitaa',
-            ];
-            if (externalSchemes.contains(scheme)) {
+            final ExternalUriAction action = externalUriAction(uri);
+            if (action == ExternalUriAction.launchExternal) {
+              unawaited(launchExternalUri(uri!, controller: _controller));
               return NavigationDecision.prevent;
             }
+            if (action == ExternalUriAction.ignore) {
+              return NavigationDecision.prevent;
+            }
+            final String scheme = (uri?.scheme ?? '').toLowerCase();
             // شبیهساز اندروید | میزبان محلی به 10.0.2.2 نگاشت میشود.
             if (Platform.isAndroid &&
                 (scheme == 'http' || scheme == 'https') &&
@@ -4906,13 +5064,14 @@ class _NativeWebViewScreenState extends State<NativeWebViewScreen> {
             return NavigationDecision.navigate;
           },
         ),
-      )
-      ..loadRequest(Uri.parse(AppConfig.mapEmulatorUrl(widget.url)));
+      );
+    unawaited(configureAndroidWebView(_controller, context));
+    _controller.loadRequest(Uri.parse(AppConfig.mapEmulatorUrl(widget.url)));
   }
 
-  Future<void> _applyMobileFixes() async {
+  Future<void> _applyMobileFixes(String currentUrl) async {
     try {
-      await _controller.runJavaScript(_mobileFixesJs);
+      await _controller.runJavaScript(_mobileFixesFor(currentUrl));
     } catch (_) {}
   }
 
@@ -4920,17 +5079,30 @@ class _NativeWebViewScreenState extends State<NativeWebViewScreen> {
   Widget build(BuildContext context) {
     return Directionality(
       textDirection: TextDirection.rtl,
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text(
-            widget.title,
-            style: const TextStyle(fontSize: 14),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
+      child: PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (bool didPop, Object? result) async {
+          if (didPop) return;
+          await handlePushedWebViewBack(
+            canGoBack: await _controller.canGoBack(),
+            goBack: _controller.goBack,
+            popRoute: () {
+              if (mounted) Navigator.of(context).pop();
+            },
+          );
+        },
+        child: Scaffold(
+          appBar: AppBar(
+            title: Text(
+              widget.title,
+              style: const TextStyle(fontSize: 14),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            elevation: 0.5,
           ),
-          elevation: 0.5,
+          body: WebViewWidget(controller: _controller),
         ),
-        body: WebViewWidget(controller: _controller),
       ),
     );
   }

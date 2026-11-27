@@ -209,7 +209,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('فروش ویژه'), findsOneWidget);
     expect(find.text('برای دیدن جزئیات بیشتر ادامه دهید.'), findsOneWidget);
-    expect(find.text('بستن'), findsOneWidget);
+    expect(find.byIcon(Icons.close_rounded), findsOneWidget);
     expect(find.text('مشاهده'), findsOneWidget);
     expect(find.byType(Directionality), findsWidgets);
 

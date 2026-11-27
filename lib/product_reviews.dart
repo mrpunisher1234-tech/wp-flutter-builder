@@ -278,7 +278,7 @@ class _ProductReviewsSectionState extends State<ProductReviewsSection> {
           onPressed: () {
             // گیت کارت ۸: اگر «فقط کاربران واردشده» فعال باشد و کاربر
             // لاگین نکرده باشد، به صفحه پروفایل/لاگین هدایت می‌شود.
-            if (widget.requireLogin && !UserSession.isLoggedIn) {
+            if (!UserSession.isLoggedIn && (widget.requireLogin || !widget.config.reviewsGuestPost)) {
               if (widget.onGoToLogin != null) {
                 widget.onGoToLogin!();
               } else {

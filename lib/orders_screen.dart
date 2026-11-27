@@ -328,14 +328,14 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
       client = HttpClient()..connectionTimeout = const Duration(seconds: 5);
       final HttpClientRequest request = await client.postUrl(
         Uri.parse('${widget.config.effectiveApiBaseUrl}orders'),
-      );
+      ).timeout(const Duration(seconds: 15));
       request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
       request.write(jsonEncode(<String, dynamic>{
         'auth_token': token,
         'page': nextPage,
         'per_page': _pageSize,
       }));
-      final HttpClientResponse response = await request.close();
+      final HttpClientResponse response = await request.close().timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 401) {
         if (!mounted) return;
@@ -350,7 +350,7 @@ class _OrdersScreenState extends State<OrdersScreen> with WidgetsBindingObserver
         throw const HttpException('bad status');
       }
 
-      final String body = await response.transform(utf8.decoder).join();
+      final String body = await response.transform(utf8.decoder).join().timeout(const Duration(seconds: 15));
       final dynamic decoded = jsonDecode(body);
       final List<dynamic> rawItems = decoded is Map<String, dynamic> && decoded['items'] is List
           ? decoded['items'] as List<dynamic>
@@ -888,19 +888,19 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
       client = HttpClient()..connectionTimeout = const Duration(seconds: 5);
       final HttpClientRequest request = await client.postUrl(
         Uri.parse('${widget.config.effectiveApiBaseUrl}orders/detail'),
-      );
+      ).timeout(const Duration(seconds: 15));
       request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
       request.write(jsonEncode(<String, dynamic>{
         'auth_token': token,
         'order_id': widget.order.id,
       }));
-      final HttpClientResponse response = await request.close();
+      final HttpClientResponse response = await request.close().timeout(const Duration(seconds: 15));
 
       if (response.statusCode != 200) {
         throw const HttpException('bad status');
       }
 
-      final String body = await response.transform(utf8.decoder).join();
+      final String body = await response.transform(utf8.decoder).join().timeout(const Duration(seconds: 15));
       final dynamic decoded = jsonDecode(body);
       if (decoded is! Map<String, dynamic>) {
         throw const HttpException('bad payload');

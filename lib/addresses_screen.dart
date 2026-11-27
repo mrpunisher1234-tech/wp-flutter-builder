@@ -178,10 +178,10 @@ class _AddressesScreenState extends State<AddressesScreen> {
       client = HttpClient()..connectionTimeout = const Duration(seconds: 5);
       final HttpClientRequest request = await client.postUrl(
         Uri.parse('${widget.config.effectiveApiBaseUrl}$route'),
-      );
+      ).timeout(const Duration(seconds: 15));
       request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
       request.write(jsonEncode(<String, dynamic>{'auth_token': token}..addAll(body)));
-      final HttpClientResponse response = await request.close();
+      final HttpClientResponse response = await request.close().timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 401) {
         if (!mounted) return null;
@@ -195,7 +195,7 @@ class _AddressesScreenState extends State<AddressesScreen> {
         throw const HttpException('bad status');
       }
 
-      final String raw = await response.transform(utf8.decoder).join();
+      final String raw = await response.transform(utf8.decoder).join().timeout(const Duration(seconds: 15));
       final dynamic decoded = jsonDecode(raw);
       return decoded is Map<String, dynamic> ? decoded : null;
     } catch (_) {
@@ -663,7 +663,7 @@ class _AddressFormScreenState extends State<AddressFormScreen> {
         client = HttpClient()..connectionTimeout = const Duration(seconds: 5);
         final HttpClientRequest request = await client.postUrl(
           Uri.parse('${widget.config.effectiveApiBaseUrl}addresses/save'),
-        );
+        ).timeout(const Duration(seconds: 15));
         request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
         request.write(jsonEncode(<String, dynamic>{
           'auth_token': token,
@@ -678,8 +678,8 @@ class _AddressFormScreenState extends State<AddressFormScreen> {
           'postcode': latinDigits(_postcode.text).replaceAll(RegExp(r'[^0-9]'), ''),
           'is_default': _isDefault,
         }));
-        final HttpClientResponse response = await request.close();
-        final String raw = await response.transform(utf8.decoder).join();
+        final HttpClientResponse response = await request.close().timeout(const Duration(seconds: 15));
+        final String raw = await response.transform(utf8.decoder).join().timeout(const Duration(seconds: 15));
         final dynamic decoded = jsonDecode(raw);
 
         if (!mounted) return;

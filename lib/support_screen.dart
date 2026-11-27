@@ -103,15 +103,15 @@ class _SupportScreenState extends State<SupportScreen> {
       client = HttpClient()..connectionTimeout = const Duration(seconds: 5);
       final HttpClientRequest request = await client.postUrl(
         Uri.parse('${widget.config.effectiveApiBaseUrl}support/contact'),
-      );
+      ).timeout(const Duration(seconds: 15));
       request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
       request.write(jsonEncode(<String, dynamic>{
         'name': _name.text.trim(),
         'phone': _phone.text.trim(),
         'message': _message.text.trim(),
       }));
-      final HttpClientResponse response = await request.close();
-      final String body = await response.transform(utf8.decoder).join();
+      final HttpClientResponse response = await request.close().timeout(const Duration(seconds: 15));
+      final String body = await response.transform(utf8.decoder).join().timeout(const Duration(seconds: 15));
       final dynamic decoded = jsonDecode(body);
 
       if (!mounted) return;

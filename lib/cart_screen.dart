@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'product_variations.dart';
 import 'checkout_screen.dart';
 import 'main.dart';
 import 'native_mode.dart';
@@ -12,22 +13,29 @@ import 'native_mode.dart';
 /// مدل آیتم سبد خرید
 class CartItem {
   final WpItem item;
+  final WpVariation? variation;
   int quantity;
 
-  CartItem({required this.item, this.quantity = 1});
+  CartItem({required this.item, this.quantity = 1, this.variation});
+
+  String get key => variationCartKey(item.id, variation);
+  int get variationId => variation?.id ?? 0;
+  String get featuredImage => (variation?.image.isNotEmpty == true) ? variation!.image : item.featuredImage;
+  String get sku => (variation?.sku.isNotEmpty == true) ? variation!.sku : item.sku;
+  Map<String, String> get variationAttributes => variation?.attributes ?? const <String, String>{};
 
   int get unitPrice {
-    final String raw = item.onSale && item.salePrice.isNotEmpty
-        ? item.salePrice
-        : item.price;
+    final String raw = variation != null
+        ? (variation!.onSale && variation!.salePrice.isNotEmpty ? variation!.salePrice : variation!.price)
+        : (item.onSale && item.salePrice.isNotEmpty ? item.salePrice : item.price);
     // اعشار حذف میشود | «150000.00» نباید ۱۰۰ برابر قیمت شود.
     return int.tryParse(priceIntegerPart(raw)) ?? 0;
   }
 
   int get unitRegularPrice {
-    final String raw = item.regularPrice.isNotEmpty
-        ? item.regularPrice
-        : item.price;
+    final String raw = variation != null
+        ? (variation!.regularPrice.isNotEmpty ? variation!.regularPrice : variation!.price)
+        : (item.regularPrice.isNotEmpty ? item.regularPrice : item.price);
     return int.tryParse(priceIntegerPart(raw)) ?? unitPrice;
   }
 }
@@ -67,34 +75,44 @@ class CartManager extends ChangeNotifier {
   int get totalDiscount =>
       (totalRegularPrice - totalPrice) > 0 ? (totalRegularPrice - totalPrice) : 0;
 
-  void addItem(WpItem item) {
-    _changeCart(() {
-      final int index = _items.indexWhere((CartItem entry) => entry.item.id == item.id);
-    if (index != -1) {
-      _items[index].quantity++;
-    } else {
-      _items.add(CartItem(item: item, quantity: 1));
+  bool addItem(WpItem item, {WpVariation? variation}) {
+    if (item.isVariable && (variation == null || variation.id <= 0 || !variation.inStock || !variation.purchasable)) {
+      return false;
     }
-    });
-  }
-
-  void removeOne(WpItem item) {
+    final CartItem candidate = CartItem(item: item, variation: variation);
     _changeCart(() {
-    final int index = _items.indexWhere((CartItem entry) => entry.item.id == item.id);
-    if (index != -1) {
-      if (_items[index].quantity > 1) {
-        _items[index].quantity--;
+      final int index = _items.indexWhere((CartItem entry) => entry.key == candidate.key);
+      if (index != -1) {
+        _items[index].quantity++;
       } else {
-        _items.removeAt(index);
+        _items.add(candidate);
       }
+    });
+    return true;
+  }
+
+  void removeOne(WpItem item, {WpVariation? variation}) {
+    final String key = variationCartKey(item.id, variation);
+    _changeCart(() {
+      final int index = _items.indexWhere((CartItem entry) => entry.key == key);
+      if (index != -1) {
+        if (_items[index].quantity > 1) {
+          _items[index].quantity--;
+        } else {
+          _items.removeAt(index);
+        }
       }
     });
   }
 
-  void deleteItem(int itemId) {
+  void deleteItem(int itemId, {int variationId = 0}) {
     _changeCart(
-      () => _items.removeWhere((CartItem item) => item.item.id == itemId),
+      () => _items.removeWhere((CartItem item) => item.item.id == itemId && item.variationId == variationId),
     );
+  }
+
+  void deleteCartItem(CartItem target) {
+    _changeCart(() => _items.removeWhere((CartItem item) => item.key == target.key));
   }
 
   void clearCart() {
@@ -143,8 +161,9 @@ class CartManager extends ChangeNotifier {
       await _restoreFuture;
       final SharedPreferences prefs = await SharedPreferences.getInstance();
       final List<Map<String, dynamic>> rawList = _items
-          .map((CartItem cartItem) => <String, dynamic>{
+              .map((CartItem cartItem) => <String, dynamic>{
                 'quantity': cartItem.quantity,
+                'variation': cartItem.variation?.toMap(),
                 'item': <String, dynamic>{
                   'id': cartItem.item.id,
                   'title': cartItem.item.title,
@@ -152,6 +171,7 @@ class CartManager extends ChangeNotifier {
                   'url': cartItem.item.url,
                   'featured_image': cartItem.item.featuredImage,
                   'product': <String, dynamic>{
+                    'product_type': cartItem.item.productType,
                     'price': cartItem.item.price,
                     'regular_price': cartItem.item.regularPrice,
                     'sale_price': cartItem.item.salePrice,
@@ -196,9 +216,15 @@ class CartManager extends ChangeNotifier {
         final Map<String, dynamic> itemMap =
             element['item'] as Map<String, dynamic>? ?? <String, dynamic>{};
         final int quantity = (element['quantity'] as num?)?.toInt() ?? 1;
+        final WpVariation? variation = element['variation'] is Map
+            ? WpVariation.fromMap(
+                (element['variation'] as Map).cast<String, dynamic>(),
+                mapUrl: AppConfig.mapEmulatorUrl,
+              )
+            : null;
         if (quantity < 1 || itemMap.isEmpty) continue;
         restored.add(
-          CartItem(item: WpItem.fromMap(itemMap), quantity: quantity),
+          CartItem(item: WpItem.fromMap(itemMap), quantity: quantity, variation: variation),
         );
       }
     } catch (_) {
@@ -280,6 +306,7 @@ class _CartViewState extends State<CartView> {
         : widget.config.siteUrl;
 
     setState(() => _handingOff = true);
+    HttpClient? client;
     try {
       // توکن ورود | اگر کاربر وارد باشد، سرور آدرس پیش‌فرضش را به فرم
       // تسویه‌حساب تزریق می‌کند؛ بدون توکن، همان مسیر مهمان قبلی.
@@ -287,9 +314,9 @@ class _CartViewState extends State<CartView> {
       final String? authToken = prefs.getString('wptf_auth_token');
 
       final Uri uri = Uri.parse('${apiBase}cart-handoff');
-      final HttpClient client = HttpClient()
+      client = HttpClient()
         ..connectionTimeout = const Duration(seconds: 5);
-      final HttpClientRequest request = await client.postUrl(uri);
+      final HttpClientRequest request = await client.postUrl(uri).timeout(const Duration(seconds: 15));
       request.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
       request.add(
         utf8.encode(
@@ -298,6 +325,8 @@ class _CartViewState extends State<CartView> {
               for (final CartItem cartItem in items)
                 <String, dynamic>{
                   'product_id': cartItem.item.id,
+                  'variation_id': cartItem.variationId,
+                  'variation': cartItem.variationAttributes,
                   'quantity': cartItem.quantity,
                 },
             ],
@@ -305,8 +334,8 @@ class _CartViewState extends State<CartView> {
           }),
         ),
       );
-      final HttpClientResponse response = await request.close();
-      final String body = await response.transform(utf8.decoder).join();
+      final HttpClientResponse response = await request.close().timeout(const Duration(seconds: 15));
+      final String body = await response.transform(utf8.decoder).join().timeout(const Duration(seconds: 15));
       if (!mounted) return;
       final dynamic decoded = jsonDecode(body);
       final String? token = decoded is Map<String, dynamic>
@@ -330,6 +359,8 @@ class _CartViewState extends State<CartView> {
       if (!mounted) return;
       _showHandoffError();
       setState(() => _handingOff = false);
+    } finally {
+      client?.close(force: true);
     }
   }
 
@@ -674,9 +705,9 @@ class _CartItemCard extends StatelessWidget {
               width: 86,
               height: 86,
               color: Dk.surface2,
-              child: item.featuredImage.isNotEmpty
+              child: cartItem.featuredImage.isNotEmpty
                   ? Image.network(
-                      item.featuredImage,
+                      cartItem.featuredImage,
                       fit: BoxFit.contain,
                       errorBuilder: (_, Object? error, StackTrace? trace) =>
                           const Icon(Icons.image, color: Dk.text4),
@@ -702,6 +733,15 @@ class _CartItemCard extends StatelessWidget {
                     height: 1.4,
                   ),
                 ),
+                if (cartItem.variationAttributes.isNotEmpty) ...<Widget>[
+                  const SizedBox(height: 4),
+                  Text(
+                    cartItem.variationAttributes.values.join(' | '),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 11, color: Dk.text3),
+                  ),
+                ],
                 const SizedBox(height: 6),
                 const Row(
                   children: <Widget>[
@@ -728,7 +768,7 @@ class _CartItemCard extends StatelessWidget {
                         children: <Widget>[
                           // دکمه مثبت
                           InkWell(
-                            onTap: () => manager.addItem(item),
+                            onTap: () => manager.addItem(item, variation: cartItem.variation),
                             borderRadius: BorderRadius.circular(6),
                             child: const Padding(
                               padding: EdgeInsets.all(4),
@@ -744,7 +784,7 @@ class _CartItemCard extends StatelessWidget {
                           ),
                           // دکمه منفی یا سطل زباله
                           InkWell(
-                            onTap: () => manager.removeOne(item),
+                            onTap: () => manager.removeOne(item, variation: cartItem.variation),
                             borderRadius: BorderRadius.circular(6),
                             child: Padding(
                               padding: const EdgeInsets.all(4),

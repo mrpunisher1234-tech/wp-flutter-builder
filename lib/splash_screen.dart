@@ -101,6 +101,17 @@ class _SplashScreenState extends State<SplashScreen> {
     );
   }
 
+  Widget _networkLogo(int index) {
+    final List<String> candidates = widget.config.splashLogoCandidates;
+    if (index >= candidates.length) return const SizedBox.shrink();
+    return Image(
+      image: NetworkImage(candidates[index]),
+      fit: BoxFit.contain,
+      errorBuilder: (BuildContext context, Object error, StackTrace? stackTrace) =>
+          _networkLogo(index + 1),
+    );
+  }
+
   Widget _buildLogo() {
     final ImageProvider? provider = widget.config.splashLogoProvider;
     if (provider == null) {
@@ -116,7 +127,6 @@ class _SplashScreenState extends State<SplashScreen> {
         int? frame,
         bool wasSynchronouslyLoaded,
       ) {
-        // لوگوی بستهبندیشده در همان فریم حاضر است و بدون فیدین نمایش داده میشود.
         if (wasSynchronouslyLoaded) {
           return child;
         }
@@ -132,18 +142,7 @@ class _SplashScreenState extends State<SplashScreen> {
         Object error,
         StackTrace? stackTrace,
       ) {
-        // فایل داخلی خراب یا منقضی شده | نمایش از شبکه، و در نهایت قاب خالی.
-        final ImageProvider? fallback = widget.config.splashLogoNetworkProvider;
-        if (fallback == null || fallback == provider) {
-          return const SizedBox.shrink();
-        }
-        return Image(
-          image: fallback,
-          fit: BoxFit.contain,
-          errorBuilder: (BuildContext context, Object error, StackTrace? stackTrace) {
-            return const SizedBox.shrink();
-          },
-        );
+        return _networkLogo(provider is AssetImage ? 0 : 1);
       },
     );
   }
